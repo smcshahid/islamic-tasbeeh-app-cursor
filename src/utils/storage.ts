@@ -3,6 +3,7 @@ import { Counter, Session, Settings, User } from '../types';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
+import { secureLogger } from './secureLogger';
 
 const STORAGE_KEYS = {
   COUNTERS: 'tasbeeh_counters',
@@ -34,7 +35,7 @@ export const storage = {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.COUNTERS);
       return data ? JSON.parse(data) : [];
     } catch (error) {
-      console.error('Error loading counters:', error);
+      secureLogger.error('Error loading counters', error, 'Storage');
       return [];
     }
   },
@@ -43,7 +44,7 @@ export const storage = {
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.COUNTERS, JSON.stringify(counters));
     } catch (error) {
-      console.error('Error saving counters:', error);
+      secureLogger.error('Error saving counters', error, 'Storage');
       throw error;
     }
   },
@@ -54,7 +55,7 @@ export const storage = {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.SESSIONS);
       return data ? JSON.parse(data) : [];
     } catch (error) {
-      console.error('Error loading sessions:', error);
+      secureLogger.error('Error loading sessions', error, 'Storage');
       return [];
     }
   },
@@ -65,7 +66,7 @@ export const storage = {
       const limitedSessions = sessions.slice(-100);
       await AsyncStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify(limitedSessions));
     } catch (error) {
-      console.error('Error saving sessions:', error);
+      secureLogger.error('Error saving sessions', error, 'Storage');
       throw error;
     }
   },
@@ -76,7 +77,7 @@ export const storage = {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.SETTINGS);
       return data ? JSON.parse(data) : null;
     } catch (error) {
-      console.error('Error loading settings:', error);
+      secureLogger.error('Error loading settings', error, 'Storage');
       return null;
     }
   },
@@ -85,7 +86,7 @@ export const storage = {
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
     } catch (error) {
-      console.error('Error saving settings:', error);
+      secureLogger.error('Error saving settings', error, 'Storage');
       throw error;
     }
   },
@@ -96,7 +97,7 @@ export const storage = {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.USER);
       return data ? JSON.parse(data) : null;
     } catch (error) {
-      console.error('Error loading user:', error);
+      secureLogger.error('Error loading user', error, 'Storage');
       return null;
     }
   },
@@ -109,7 +110,7 @@ export const storage = {
         await AsyncStorage.removeItem(STORAGE_KEYS.USER);
       }
     } catch (error) {
-      console.error('Error saving user:', error);
+      secureLogger.error('Error saving user', error, 'Storage');
       throw error;
     }
   },
@@ -120,7 +121,7 @@ export const storage = {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.ACTIVE_SESSION);
       return data ? JSON.parse(data) : null;
     } catch (error) {
-      console.error('Error loading active session:', error);
+      secureLogger.error('Error loading active session', error, 'Storage');
       return null;
     }
   },
@@ -133,7 +134,7 @@ export const storage = {
         await AsyncStorage.removeItem(STORAGE_KEYS.ACTIVE_SESSION);
       }
     } catch (error) {
-      console.error('Error saving active session:', error);
+      secureLogger.error('Error saving active session', error, 'Storage');
       throw error;
     }
   },
@@ -144,7 +145,7 @@ export const storage = {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.CURRENT_COUNTER);
       return data ? JSON.parse(data) : null;
     } catch (error) {
-      console.error('Error loading current counter:', error);
+      secureLogger.error('Error loading current counter', error, 'Storage');
       return null;
     }
   },
@@ -157,7 +158,7 @@ export const storage = {
         await AsyncStorage.removeItem(STORAGE_KEYS.CURRENT_COUNTER);
       }
     } catch (error) {
-      console.error('Error saving current counter:', error);
+      secureLogger.error('Error saving current counter', error, 'Storage');
       throw error;
     }
   },
@@ -208,7 +209,7 @@ export const storage = {
 
       return fileUri;
     } catch (error) {
-      console.error('Error exporting data:', error);
+      secureLogger.error('Error exporting data', error, 'Storage');
       throw new Error('Failed to export data. Please try again.');
     }
   },
@@ -239,7 +240,7 @@ export const storage = {
 
       return { success: true, data: importData };
     } catch (error) {
-      console.error('Error importing data:', error);
+      secureLogger.error('Error importing data', error, 'Storage');
       return { success: false, error: 'Failed to import data. Please check the file format.' };
     }
   },
@@ -288,7 +289,7 @@ export const storage = {
         await this.saveSettings(mergedSettings);
       }
     } catch (error) {
-      console.error('Error applying imported data:', error);
+      secureLogger.error('Error applying imported data', error, 'Storage');
       throw new Error('Failed to apply imported data.');
     }
   },
@@ -314,7 +315,7 @@ export const storage = {
     try {
       await AsyncStorage.multiRemove(Object.values(STORAGE_KEYS));
     } catch (error) {
-      console.error('Error clearing storage:', error);
+      secureLogger.error('Error clearing storage', error, 'Storage');
       throw error;
     }
   },

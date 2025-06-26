@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -19,84 +19,292 @@ import { useAppTheme } from '../src/utils/theme';
 import { COLORS } from '../src/types';
 import { auth } from '../src/utils/supabase';
 
+// Enhanced input validation
+const INPUT_VALIDATION = {
+  email: {
+    minLength: 5,
+    maxLength: 254,
+    pattern: /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/,
+  },
+  password: {
+    minLength: 8,
+    maxLength: 128,
+    requirements: {
+      lowercase: /(?=.*[a-z])/,
+      uppercase: /(?=.*[A-Z])/,
+      number: /(?=.*\d)/,
+      specialChar: /(?=.*[!@#$%^&*(),.?":{}|<>])/,
+    }
+  }
+};
+
+// Rate limiting state
+let authAttempts = 0;
+let lastAttemptTime = 0;
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_DURATION = 300000; // 5 minutes
+
 export default function AuthScreen() {
   const { isDark } = useAppTheme();
-  const { signIn, signInAsGuest, isLoading } = useTasbeeh();
+  const { signIn, signUp, signInAsGuest, isLoading, error: contextError } = useTasbeeh();
 
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [emailError, setEmailError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
-  const validateEmail = (email: string) => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
-  };
+  // Clear auth error when switching between sign in/up
+  useEffect(() => {
+    setAuthError(null);
+    setEmailError('');
+    setPasswordError('');
+  }, [isSignUp]);
 
-  const handleAuth = async () => {
-    if (!email.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please fill in all fields');
-      return;
+  // Display context error if it's not a success message
+  useEffect(() => {
+    if (contextError && !contextError.includes('Success')) {
+      setAuthError(contextError);
+    } else if (contextError && contextError.includes('Success')) {
+      setAuthError(null);
+      // Auto-clear success messages after 3 seconds
+      const timer = setTimeout(() => setAuthError(null), 3000);
+      return () => clearTimeout(timer);
     }
+  }, [contextError]);
 
-    if (!validateEmail(email)) {
-      Alert.alert('Error', 'Please enter a valid email address');
-      return;
+  // Enhanced email validation with security checks
+  const validateEmail = useCallback((email: string): { isValid: boolean; error?: string } => {
+    const trimmedEmail = email.trim().toLowerCase();
+    
+    if (!trimmedEmail) {
+      return { isValid: false, error: 'Email is required' };
     }
-
-    if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters long');
-      return;
+    
+    if (trimmedEmail.length < INPUT_VALIDATION.email.minLength) {
+      return { isValid: false, error: 'Email is too short' };
     }
-
-    if (isSignUp && password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
-      return;
+    
+    if (trimmedEmail.length > INPUT_VALIDATION.email.maxLength) {
+      return { isValid: false, error: 'Email is too long' };
     }
+    
+    if (!INPUT_VALIDATION.email.pattern.test(trimmedEmail)) {
+      return { isValid: false, error: 'Please enter a valid email address' };
+    }
+    
+    // Basic security checks
+    if (trimmedEmail.includes('..') || trimmedEmail.startsWith('.') || trimmedEmail.endsWith('.')) {
+      return { isValid: false, error: 'Invalid email format' };
+    }
+    
+    return { isValid: true };
+  }, []);
 
+  // Enhanced password validation
+  const validatePassword = useCallback((password: string, isSignUp: boolean): { isValid: boolean; error?: string; strength?: string } => {
+    if (!password) {
+      return { isValid: false, error: 'Password is required' };
+    }
+    
+    if (password.length < INPUT_VALIDATION.password.minLength) {
+      return { isValid: false, error: `Password must be at least ${INPUT_VALIDATION.password.minLength} characters long` };
+    }
+    
+    if (password.length > INPUT_VALIDATION.password.maxLength) {
+      return { isValid: false, error: 'Password is too long' };
+    }
+    
+    // Only enforce strong password requirements for sign up
+    if (isSignUp) {
+      const requirements = INPUT_VALIDATION.password.requirements;
+      
+      if (!requirements.lowercase.test(password)) {
+        return { isValid: false, error: 'Password must contain at least one lowercase letter' };
+      }
+      
+      if (!requirements.uppercase.test(password)) {
+        return { isValid: false, error: 'Password must contain at least one uppercase letter' };
+      }
+      
+      if (!requirements.number.test(password)) {
+        return { isValid: false, error: 'Password must contain at least one number' };
+      }
+      
+      // Calculate password strength
+      let strength = 'Weak';
+      let score = 0;
+      
+      if (requirements.lowercase.test(password)) score++;
+      if (requirements.uppercase.test(password)) score++;
+      if (requirements.number.test(password)) score++;
+      if (requirements.specialChar.test(password)) score++;
+      if (password.length >= 12) score++;
+      
+      if (score >= 4) strength = 'Strong';
+      else if (score >= 3) strength = 'Medium';
+      
+      return { isValid: true, strength };
+    }
+    
+    return { isValid: true };
+  }, []);
+
+  // Rate limiting check
+  const checkRateLimit = useCallback((): boolean => {
+    const now = Date.now();
+    
+    if (now - lastAttemptTime > LOCKOUT_DURATION) {
+      authAttempts = 0;
+    }
+    
+    if (authAttempts >= MAX_ATTEMPTS) {
+      const remainingTime = Math.ceil((LOCKOUT_DURATION - (now - lastAttemptTime)) / 1000 / 60);
+      setAuthError(`Too many attempts. Please wait ${remainingTime} minutes before trying again.`);
+      return false;
+    }
+    
+    return true;
+  }, []);
+
+  // Secure input sanitization
+  const sanitizeInput = useCallback((input: string): string => {
+    return input.replace(/[<>]/g, '').trim();
+  }, []);
+
+  // Enhanced authentication handler
+  const handleAuth = useCallback(async () => {
+    if (isSubmitting) return;
+    
+    // Check rate limiting
+    if (!checkRateLimit()) return;
+    
+    setIsSubmitting(true);
+    setEmailError('');
+    setPasswordError('');
+    setAuthError(null);
+    
     try {
+      // Sanitize inputs
+      const sanitizedEmail = sanitizeInput(email);
+      const sanitizedPassword = password; // Don't sanitize password as it might contain special chars
+      
+      // Validate email
+      const emailValidation = validateEmail(sanitizedEmail);
+      if (!emailValidation.isValid) {
+        setEmailError(emailValidation.error || 'Invalid email');
+        setIsSubmitting(false);
+        return;
+      }
+      
+      // Validate password
+      const passwordValidation = validatePassword(sanitizedPassword, isSignUp);
+      if (!passwordValidation.isValid) {
+        setPasswordError(passwordValidation.error || 'Invalid password');
+        setIsSubmitting(false);
+        return;
+      }
+      
+      // Validate confirm password for sign up
+      if (isSignUp && sanitizedPassword !== confirmPassword) {
+        setPasswordError('Passwords do not match');
+        setIsSubmitting(false);
+        return;
+      }
+      
+      // Record attempt
+      authAttempts++;
+      lastAttemptTime = Date.now();
+      
       if (isSignUp) {
         // Sign up
-        const { data, error } = await auth.signUp(email, password);
-        
-        if (error) {
-          Alert.alert('Sign Up Error', error.message);
-          return;
-        }
-
-        if (data.user) {
-          Alert.alert(
-            'Success',
-            'Account created successfully! Please check your email for verification.',
-            [
-              {
-                text: 'OK',
-                onPress: () => {
-                  setIsSignUp(false);
-                  setEmail('');
-                  setPassword('');
-                  setConfirmPassword('');
-                },
-              },
-            ]
-          );
-        }
+        await signUp(sanitizedEmail, sanitizedPassword);
+        // Reset attempts on successful sign up
+        authAttempts = 0;
       } else {
         // Sign in
-        await signIn(email, password);
+        await signIn(sanitizedEmail, sanitizedPassword);
+        // Reset attempts on successful sign in
+        authAttempts = 0;
         router.replace('/(tabs)');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Auth error:', error);
-      Alert.alert('Error', 'An unexpected error occurred');
+      
+      // Provide user-friendly error messages
+      let userMessage = 'An unexpected error occurred. Please try again.';
+      
+      if (error?.message?.includes('Invalid login credentials')) {
+        userMessage = isSignUp 
+          ? 'This email is already registered. Try signing in instead.'
+          : 'Invalid email or password. Please check your credentials or create an account.';
+      } else if (error?.message?.includes('Email not confirmed')) {
+        userMessage = 'Please check your email and click the verification link before signing in.';
+      } else if (error?.message?.includes('already registered')) {
+        userMessage = 'This email is already registered. Try signing in instead.';
+      } else if (error?.message?.includes('network') || error?.message?.includes('fetch')) {
+        userMessage = 'Network error. Please check your internet connection and try again.';
+      }
+      
+      setAuthError(userMessage);
+    } finally {
+      setIsSubmitting(false);
     }
-  };
+  }, [
+    isSubmitting, 
+    checkRateLimit, 
+    email, 
+    password, 
+    confirmPassword, 
+    isSignUp, 
+    validateEmail, 
+    validatePassword, 
+    sanitizeInput, 
+    signIn,
+    signUp
+  ]);
 
-  const handleGuestSignIn = async () => {
-    await signInAsGuest();
-    router.replace('/(tabs)');
-  };
+  const handleGuestSignIn = useCallback(async () => {
+    if (isSubmitting) return;
+    
+    setIsSubmitting(true);
+    setAuthError(null);
+    try {
+      await signInAsGuest();
+      router.replace('/(tabs)');
+    } catch (error) {
+      console.error('Guest sign in error:', error);
+      setAuthError('Failed to sign in as guest. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [isSubmitting, signInAsGuest]);
+
+  // Real-time email validation
+  const handleEmailChange = useCallback((text: string) => {
+    setEmail(text);
+    if (emailError) {
+      const validation = validateEmail(text);
+      if (validation.isValid) {
+        setEmailError('');
+      }
+    }
+  }, [emailError, validateEmail]);
+
+  // Real-time password validation
+  const handlePasswordChange = useCallback((text: string) => {
+    setPassword(text);
+    if (passwordError) {
+      const validation = validatePassword(text, isSignUp);
+      if (validation.isValid) {
+        setPasswordError('');
+      }
+    }
+  }, [passwordError, validatePassword, isSignUp]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: isDark ? COLORS.neutral.gray900 : COLORS.neutral.gray50 }]}>
@@ -127,7 +335,12 @@ export default function AuthScreen() {
                   !isSignUp && styles.activeToggle,
                   !isSignUp && { backgroundColor: COLORS.primary.green }
                 ]}
-                onPress={() => setIsSignUp(false)}
+                onPress={() => {
+                  setIsSignUp(false);
+                  setEmailError('');
+                  setPasswordError('');
+                  setAuthError(null);
+                }}
               >
                 <Text style={[
                   styles.toggleText,
@@ -143,7 +356,12 @@ export default function AuthScreen() {
                   isSignUp && styles.activeToggle,
                   isSignUp && { backgroundColor: COLORS.primary.green }
                 ]}
-                onPress={() => setIsSignUp(true)}
+                onPress={() => {
+                  setIsSignUp(true);
+                  setEmailError('');
+                  setPasswordError('');
+                  setAuthError(null);
+                }}
               >
                 <Text style={[
                   styles.toggleText,
@@ -165,39 +383,89 @@ export default function AuthScreen() {
               }
             </Text>
 
-            <View style={styles.inputContainer}>
+            {/* Display auth errors prominently */}
+            {authError && (
+              <View style={[styles.errorContainer, { 
+                backgroundColor: authError.includes('Success') || authError.includes('created') || authError.includes('ready') 
+                  ? COLORS.semantic.success + '20' 
+                  : COLORS.semantic.error + '20',
+                borderColor: authError.includes('Success') || authError.includes('created') || authError.includes('ready')
+                  ? COLORS.semantic.success 
+                  : COLORS.semantic.error
+              }]}>
+                <Ionicons 
+                  name={authError.includes('Success') || authError.includes('created') || authError.includes('ready') ? 'checkmark-circle-outline' : 'alert-circle-outline'} 
+                  size={20} 
+                  color={authError.includes('Success') || authError.includes('created') || authError.includes('ready') ? COLORS.semantic.success : COLORS.semantic.error} 
+                />
+                <Text style={[styles.errorContainerText, { 
+                  color: authError.includes('Success') || authError.includes('created') || authError.includes('ready') 
+                    ? COLORS.semantic.success 
+                    : COLORS.semantic.error 
+                }]}>
+                  {authError}
+                </Text>
+              </View>
+            )}
+
+            <View style={[
+              styles.inputContainer,
+              emailError ? styles.inputError : null,
+              { 
+                borderColor: emailError 
+                  ? COLORS.semantic.error 
+                  : (isDark ? COLORS.neutral.gray600 : COLORS.neutral.gray300),
+                backgroundColor: isDark ? COLORS.neutral.gray700 : COLORS.neutral.white
+              }
+            ]}>
               <Ionicons 
                 name="mail-outline" 
                 size={20} 
-                color={isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray500} 
+                color={emailError ? COLORS.semantic.error : (isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray500)} 
               />
               <TextInput
                 style={[styles.input, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}
                 placeholder="Email address"
                 placeholderTextColor={isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray500}
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={handleEmailChange}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
+                autoComplete="email"
+                textContentType="emailAddress"
+                maxLength={INPUT_VALIDATION.email.maxLength}
               />
             </View>
+            {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
 
-            <View style={styles.inputContainer}>
+            <View style={[
+              styles.inputContainer,
+              passwordError ? styles.inputError : null,
+              { 
+                borderColor: passwordError 
+                  ? COLORS.semantic.error 
+                  : (isDark ? COLORS.neutral.gray600 : COLORS.neutral.gray300),
+                backgroundColor: isDark ? COLORS.neutral.gray700 : COLORS.neutral.white
+              }
+            ]}>
               <Ionicons 
                 name="lock-closed-outline" 
                 size={20} 
-                color={isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray500} 
+                color={passwordError ? COLORS.semantic.error : (isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray500)} 
               />
               <TextInput
                 style={[styles.input, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}
                 placeholder="Password"
                 placeholderTextColor={isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray500}
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={handlePasswordChange}
                 secureTextEntry={!showPassword}
                 autoCapitalize="none"
                 autoCorrect={false}
+                autoComplete={isSignUp ? "new-password" : "password"}
+                textContentType={isSignUp ? "newPassword" : "password"}
+                maxLength={INPUT_VALIDATION.password.maxLength}
               />
               <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
                 <Ionicons 
@@ -207,34 +475,56 @@ export default function AuthScreen() {
                 />
               </TouchableOpacity>
             </View>
+            {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
 
             {isSignUp && (
-              <View style={styles.inputContainer}>
-                <Ionicons 
-                  name="lock-closed-outline" 
-                  size={20} 
-                  color={isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray500} 
-                />
-                <TextInput
-                  style={[styles.input, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}
-                  placeholder="Confirm password"
-                  placeholderTextColor={isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray500}
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  secureTextEntry={!showPassword}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-              </View>
+              <>
+                <View style={[
+                  styles.inputContainer,
+                  { 
+                    borderColor: isDark ? COLORS.neutral.gray600 : COLORS.neutral.gray300,
+                    backgroundColor: isDark ? COLORS.neutral.gray700 : COLORS.neutral.white
+                  }
+                ]}>
+                  <Ionicons 
+                    name="lock-closed-outline" 
+                    size={20} 
+                    color={isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray500} 
+                  />
+                  <TextInput
+                    style={[styles.input, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}
+                    placeholder="Confirm password"
+                    placeholderTextColor={isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray500}
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    autoComplete="new-password"
+                    textContentType="newPassword"
+                    maxLength={INPUT_VALIDATION.password.maxLength}
+                  />
+                </View>
+                
+                {isSignUp && password && (
+                  <Text style={[styles.passwordHint, { color: isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray600 }]}>
+                    Password must contain: uppercase, lowercase, number, and be 8+ characters
+                  </Text>
+                )}
+              </>
             )}
 
             <TouchableOpacity
-              style={[styles.authButton, { backgroundColor: COLORS.primary.green }]}
+              style={[
+                styles.authButton, 
+                { backgroundColor: COLORS.primary.green },
+                (isSubmitting || isLoading) && styles.disabledButton
+              ]}
               onPress={handleAuth}
-              disabled={isLoading}
+              disabled={isSubmitting || isLoading}
             >
               <Text style={styles.authButtonText}>
-                {isLoading ? 'Loading...' : (isSignUp ? 'Create Account' : 'Sign In')}
+                {isSubmitting || isLoading ? 'Loading...' : (isSignUp ? 'Create Account' : 'Sign In')}
               </Text>
             </TouchableOpacity>
 
@@ -252,10 +542,11 @@ export default function AuthScreen() {
                 { 
                   backgroundColor: isDark ? COLORS.neutral.gray700 : COLORS.neutral.gray100,
                   borderColor: isDark ? COLORS.neutral.gray600 : COLORS.neutral.gray300,
-                }
+                },
+                (isSubmitting || isLoading) && styles.disabledButton
               ]}
               onPress={handleGuestSignIn}
-              disabled={isLoading}
+              disabled={isSubmitting || isLoading}
             >
               <Ionicons 
                 name="person-outline" 
@@ -356,18 +647,34 @@ const styles = StyleSheet.create({
   formSubtitle: {
     fontSize: 14,
     textAlign: 'center',
-    marginBottom: 32,
+    marginBottom: 24,
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  errorContainerText: {
+    flex: 1,
+    fontSize: 14,
+    marginLeft: 8,
+    lineHeight: 20,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: COLORS.neutral.gray300,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 4,
     marginBottom: 16,
-    backgroundColor: COLORS.neutral.gray50,
+  },
+  inputError: {
+    borderColor: COLORS.semantic.error,
+    borderWidth: 2,
   },
   input: {
     flex: 1,
@@ -375,12 +682,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     fontSize: 16,
   },
+  errorText: {
+    color: COLORS.semantic.error,
+    fontSize: 12,
+    marginBottom: 8,
+    marginLeft: 4,
+  },
+  passwordHint: {
+    fontSize: 12,
+    marginBottom: 8,
+    marginLeft: 4,
+  },
   authButton: {
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
     marginTop: 8,
     marginBottom: 24,
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
   authButtonText: {
     color: COLORS.neutral.white,

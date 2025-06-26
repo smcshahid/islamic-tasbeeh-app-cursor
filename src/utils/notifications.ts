@@ -1,6 +1,8 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { Alert } from 'react-native';
+import { secureLogger } from './secureLogger';
+import type { Achievement } from './achievements';
 
 // Configure notifications behavior
 Notifications.setNotificationHandler({
@@ -24,7 +26,7 @@ export const notifications = {
       const { status } = await Notifications.requestPermissionsAsync();
       return { granted: status === 'granted' };
     } catch (error) {
-      console.error('Error requesting notification permissions:', error);
+      secureLogger.error('Error requesting notification permissions', error, 'Notifications');
       return { granted: false };
     }
   },
@@ -44,7 +46,7 @@ export const notifications = {
         });
       }
     } catch (error) {
-      console.error('Error showing achievement notification:', error);
+      secureLogger.error('Error showing achievement notification', error, 'Notifications');
     }
   },
 
@@ -89,7 +91,7 @@ export const notifications = {
         });
       }
     } catch (error) {
-      console.error('Error showing milestone notification:', error);
+      secureLogger.error('Error showing milestone notification', error, 'Notifications');
     }
   },
 
@@ -118,7 +120,7 @@ export const notifications = {
         });
       }
     } catch (error) {
-      console.error('Error showing streak notification:', error);
+      secureLogger.error('Error showing streak notification', error, 'Notifications');
     }
   },
 
@@ -152,7 +154,7 @@ export const notifications = {
         });
       }
     } catch (error) {
-      console.error('Error showing session achievement:', error);
+      secureLogger.error('Error showing session achievement', error, 'Notifications');
     }
   },
 
@@ -175,7 +177,7 @@ export const notifications = {
         });
       }
     } catch (error) {
-      console.error('Error showing time achievement:', error);
+      secureLogger.error('Error showing time achievement', error, 'Notifications');
     }
   },
 
@@ -198,7 +200,7 @@ export const notifications = {
         [{ text: 'OK' }]
       );
     } catch (error) {
-      console.error('Error showing test notification:', error);
+      secureLogger.error('Error showing test notification', error, 'Notifications');
       Alert.alert(
         'Error',
         'Failed to send test notification. Please check your notification permissions.',
@@ -219,7 +221,7 @@ export const notifications = {
         trigger: { seconds },
       });
     } catch (error) {
-      console.error('Error scheduling reminder:', error);
+      secureLogger.error('Error scheduling reminder', error, 'Notifications');
     }
   },
 
@@ -237,7 +239,140 @@ export const notifications = {
         });
       }
     } catch (error) {
-      console.error('Error showing daily goal achievement:', error);
+      secureLogger.error('Error showing daily goal achievement', error, 'Notifications');
+    }
+  },
+
+  // Smart achievement notification (new system)
+  async showSmartAchievementNotification(achievement: Achievement) {
+    try {
+      let title = '';
+      let body = '';
+      
+      switch (achievement.type) {
+        case 'level':
+          title = `🎊 Level Up! ${achievement.level?.name}`;
+          body = `Congratulations! ${achievement.description} ${achievement.level?.icon}`;
+          break;
+        case 'milestone':
+          title = `${achievement.icon} ${achievement.name}`;
+          body = `Amazing progress! ${achievement.description}`;
+          break;
+        case 'streak':
+          title = `${achievement.icon} ${achievement.name}`;
+          body = `Incredible consistency! ${achievement.description}`;
+          break;
+        case 'session':
+          title = `${achievement.icon} ${achievement.name}`;
+          body = `Great dedication! ${achievement.description}`;
+          break;
+        case 'time':
+          title = `${achievement.icon} ${achievement.name}`;
+          body = `Time well spent! ${achievement.description}`;
+          break;
+        default:
+          title = `🏆 Achievement Unlocked!`;
+          body = achievement.description;
+      }
+
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title,
+          body,
+          sound: true,
+          data: {
+            type: 'achievement',
+            achievementId: achievement.id,
+            achievementType: achievement.type
+          }
+        },
+        trigger: null, // Show immediately
+      });
+    } catch (error) {
+      secureLogger.error('Error showing smart achievement notification', error, 'Notifications');
+    }
+  },
+
+  // Target achievement notification (for user-set targets)
+  async showTargetAchievementNotification(counterName: string, target: number, count: number) {
+    try {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '🎯 Personal Target Reached!',
+          body: `Excellent! You've reached your target of ${target.toLocaleString()} for ${counterName}. Current count: ${count.toLocaleString()}`,
+          sound: true,
+          data: {
+            type: 'target',
+            counterName,
+            target,
+            count
+          }
+        },
+        trigger: null,
+      });
+    } catch (error) {
+      secureLogger.error('Error showing target achievement notification', error, 'Notifications');
+    }
+  },
+
+  // Show achievement notification for significant milestones (legacy - now only for major ones)
+  async showAchievementNotification(counterName: string, target: number, count: number) {
+    try {
+      // Only show notifications for significant target achievements (not every target)
+      if (target >= 1000 || (target >= 100 && count === target)) {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: '🏆 Major Target Achieved!',
+            body: `Outstanding! You've reached your target of ${target.toLocaleString()} for ${counterName}. Current count: ${count.toLocaleString()}`,
+            sound: true,
+          },
+          trigger: null, // Show immediately
+        });
+      }
+    } catch (error) {
+      secureLogger.error('Error showing achievement notification', error, 'Notifications');
+    }
+  },
+
+  // Show milestone notification for significant counts (legacy - now more selective)
+  async showMilestoneNotification(counterName: string, count: number) {
+    try {
+      // Only major milestones that deserve notifications
+      const majorMilestones = [1000, 5000, 10000, 25000, 50000, 100000];
+      
+      if (majorMilestones.includes(count)) {
+        let title = '🎯 Major Milestone Reached!';
+        let emoji = '🎯';
+        
+        // Special titles for major milestones
+        if (count >= 100000) {
+          title = '👑 Legendary Master!';
+          emoji = '👑';
+        } else if (count >= 50000) {
+          title = '🏆 Grand Master!';
+          emoji = '🏆';
+        } else if (count >= 25000) {
+          title = '🥇 Master Level!';
+          emoji = '🥇';
+        } else if (count >= 10000) {
+          title = '⭐ Ten Thousand Milestone!';
+          emoji = '⭐';
+        } else if (count >= 5000) {
+          title = '🌟 Five Thousand Milestone!';
+          emoji = '🌟';
+        }
+
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title,
+            body: `${emoji} Amazing! You've reached ${count.toLocaleString()} counts for ${counterName}. Keep up the excellent work!`,
+            sound: true,
+          },
+          trigger: null,
+        });
+      }
+    } catch (error) {
+      secureLogger.error('Error showing milestone notification', error, 'Notifications');
     }
   },
 
@@ -246,7 +381,7 @@ export const notifications = {
     try {
       await Notifications.cancelAllScheduledNotificationsAsync();
     } catch (error) {
-      console.error('Error canceling notifications:', error);
+      secureLogger.error('Error canceling notifications', error, 'Notifications');
     }
   }
 }; 

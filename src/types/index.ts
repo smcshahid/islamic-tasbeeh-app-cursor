@@ -77,6 +77,11 @@ export interface TasbeehContextType extends AppState {
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   signInAsGuest: () => Promise<void>;
+  
+  // Stats and achievements actions
+  getUserStats: () => any; // UserStats type from achievements
+  getUserRanking: () => any; // Ranking result
+  getNextLevelProgress: () => any; // Level progress
 }
 
 export const COLORS = {
@@ -103,6 +108,12 @@ export const COLORS = {
     gray800: '#1F2937',
     gray900: '#111827',
     black: '#000000',
+  },
+  semantic: {
+    error: '#EF4444',
+    warning: '#F59E0B',
+    success: '#10B981',
+    info: '#3B82F6',
   },
 } as const;
 

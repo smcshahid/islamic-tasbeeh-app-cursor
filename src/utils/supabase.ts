@@ -1,101 +1,445 @@
+import 'react-native-url-polyfill/auto';
 import { createClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
+import { secureLogger } from './secureLogger';
 
-// Supabase configuration
-const supabaseUrl = 'https://immoihaxapjuwboinwiy.supabase.co'; // Replace with your Supabase URL
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImltbW9paGF4YXBqdXdib2lud2l5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTA5MjIxMDcsImV4cCI6MjA2NjQ5ODEwN30.xINbvLTVELjzA7lZdq87vouxb0VJ4nFtw3RTpJAn_ps'; // Replace with your Supabase anon key
+// Security: Use environment variables instead of hardcoded credentials
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+
+// Validate required environment variables
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing required Supabase environment variables. Please check your .env file.');
+}
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Custom storage implementation for different platforms
-const ExpoStorageAdapter = {
-  getItem: (key: string) => {
-    if (Platform.OS === 'web') {
-      // Use localStorage for web
-      if (typeof localStorage !== 'undefined') {
-        return localStorage.getItem(key);
+// Enhanced secure storage implementation with size limits for SecureStore
+const SecureStorageAdapter = {
+  getItem: async (key: string) => {
+    try {
+      if (Platform.OS === 'web') {
+        // Use localStorage for web (consider using secure httpOnly cookies in production)
+        if (typeof localStorage !== 'undefined') {
+          return localStorage.getItem(key);
+        }
+        return null;
+      } else {
+        // Use SecureStore only for small, sensitive auth tokens
+        // Use AsyncStorage for larger session data
+        if (key.includes('auth') || key.includes('token')) {
+          return await SecureStore.getItemAsync(key);
+        } else {
+          return await AsyncStorage.getItem(key);
+        }
       }
-      return null;
-    } else {
-      // Use AsyncStorage for mobile (SecureStore has size limits)
-      return AsyncStorage.getItem(key);
+    } catch (error) {
+      // Fallback to AsyncStorage if SecureStore fails
+      secureLog('warn', 'SecureStore access failed, falling back to AsyncStorage', { error: error instanceof Error ? error.message : 'Unknown error' });
+      return await AsyncStorage.getItem(key);
     }
   },
-  setItem: (key: string, value: string) => {
-    if (Platform.OS === 'web') {
-      // Use localStorage for web
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(key, value);
+  
+  setItem: async (key: string, value: string) => {
+    try {
+      if (Platform.OS === 'web') {
+        // Use localStorage for web
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem(key, value);
+        }
+      } else {
+        // Use SecureStore only for small, sensitive auth tokens (< 2048 bytes)
+        // Use AsyncStorage for larger session data
+        if ((key.includes('auth') || key.includes('token')) && value.length < 2048) {
+          await SecureStore.setItemAsync(key, value);
+        } else {
+          await AsyncStorage.setItem(key, value);
+        }
       }
-    } else {
-      // Use AsyncStorage for mobile (SecureStore has size limits)
-      AsyncStorage.setItem(key, value);
+    } catch (error) {
+      // Fallback to AsyncStorage if SecureStore fails
+      secureLog('warn', 'SecureStore access failed, falling back to AsyncStorage', { error: error instanceof Error ? error.message : 'Unknown error' });
+      await AsyncStorage.setItem(key, value);
     }
   },
-  removeItem: (key: string) => {
-    if (Platform.OS === 'web') {
-      // Use localStorage for web
-      if (typeof localStorage !== 'undefined') {
-        localStorage.removeItem(key);
+  
+  removeItem: async (key: string) => {
+    try {
+      if (Platform.OS === 'web') {
+        // Use localStorage for web
+        if (typeof localStorage !== 'undefined') {
+          localStorage.removeItem(key);
+        }
+      } else {
+        // Try both SecureStore and AsyncStorage for removal
+        if (key.includes('auth') || key.includes('token')) {
+          try {
+            await SecureStore.deleteItemAsync(key);
+          } catch {
+            // Item might not exist in SecureStore, ignore error
+          }
+        }
+        await AsyncStorage.removeItem(key);
       }
-    } else {
-      // Use AsyncStorage for mobile (SecureStore has size limits)
-      AsyncStorage.removeItem(key);
+    } catch (error) {
+      // Fallback to AsyncStorage if SecureStore fails
+      secureLog('warn', 'SecureStore access failed, falling back to AsyncStorage', { error: error instanceof Error ? error.message : 'Unknown error' });
+      await AsyncStorage.removeItem(key);
     }
   },
 };
 
-// Create Supabase client
+// Create Supabase client with enhanced security and compatibility
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: ExpoStorageAdapter,
+    storage: SecureStorageAdapter,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
+    // Use PKCE only if WebCrypto is available, otherwise fall back to implicit flow
+    flowType: (typeof crypto !== 'undefined' && crypto.subtle) ? 'pkce' : 'implicit',
+  },
+  global: {
+    headers: {
+      // Add security headers
+      'X-Client-Info': 'tasbeeh-app',
+    },
   },
 });
 
-// Authentication helper functions
+// Input validation helpers
+const validateInput = {
+  email: (email: string): boolean => {
+    const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+    return emailRegex.test(email) && email.length <= 254;
+  },
+  
+  password: (password: string): { isValid: boolean; message?: string } => {
+    if (password.length < 8) {
+      return { isValid: false, message: 'Password must be at least 8 characters long' };
+    }
+    if (!/(?=.*[a-z])/.test(password)) {
+      return { isValid: false, message: 'Password must contain at least one lowercase letter' };
+    }
+    if (!/(?=.*[A-Z])/.test(password)) {
+      return { isValid: false, message: 'Password must contain at least one uppercase letter' };
+    }
+    if (!/(?=.*\d)/.test(password)) {
+      return { isValid: false, message: 'Password must contain at least one number' };
+    }
+    if (password.length > 128) {
+      return { isValid: false, message: 'Password must be less than 128 characters' };
+    }
+    return { isValid: true };
+  },
+  
+  string: (input: string, maxLength: number = 1000): string => {
+    // Basic XSS prevention
+    return input.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+               .replace(/[<>]/g, '')
+               .substring(0, maxLength)
+               .trim();
+  }
+};
+
+// Secure logging function
+const secureLog = (level: 'info' | 'warn' | 'error', message: string, data?: any) => {
+  secureLogger[level](message, data, 'Supabase');
+};
+
+// Legacy secure logging function for backward compatibility
+const legacySecureLog = (level: 'info' | 'warn' | 'error', message: string, data?: any) => {
+  const isProduction = process.env.EXPO_PUBLIC_APP_ENV === 'production';
+  const enableLogging = process.env.EXPO_PUBLIC_ENABLE_LOGGING === 'true';
+  
+  if (!isProduction || enableLogging) {
+    // Sanitize data to prevent sensitive info logging
+    const sanitizedData = data ? JSON.stringify(data).replace(/("password":|"token":|"key":)"[^"]*"/g, '$1"[REDACTED]"') : undefined;
+    
+    switch (level) {
+      case 'info':
+        console.info(`[TASBEEH] ${message}`, sanitizedData);
+        break;
+      case 'warn':
+        console.warn(`[TASBEEH] ${message}`, sanitizedData);
+        break;
+      case 'error':
+        console.error(`[TASBEEH] ${message}`, sanitizedData);
+        break;
+    }
+  }
+};
+
+// Enhanced authentication helper functions with security improvements
 export const auth = {
   // Sign up with email and password
   signUp: async (email: string, password: string) => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
-    return { data, error };
+    try {
+      // Input validation
+      if (!email || !email.trim()) {
+        return { data: null, error: { message: 'Email is required' } };
+      }
+      
+      if (!password || !password.trim()) {
+        return { data: null, error: { message: 'Password is required' } };
+      }
+      
+      if (!validateInput.email(email.trim())) {
+        return { data: null, error: { message: 'Please enter a valid email address' } };
+      }
+      
+      const passwordValidation = validateInput.password(password);
+      if (!passwordValidation.isValid) {
+        return { data: null, error: { message: passwordValidation.message || 'Invalid password' } };
+      }
+
+      secureLog('info', 'Attempting sign up', { email: email.substring(0, 3) + '***' });
+
+      const { data, error } = await supabase.auth.signUp({
+        email: validateInput.string(email.trim(), 254),
+        password: password,
+      });
+      
+      if (error) {
+        secureLog('error', 'Sign up failed', { 
+          error: error.message, 
+          code: error.status,
+          email: email.substring(0, 3) + '***'
+        });
+        
+        // Handle specific Supabase errors
+        if (error.message?.includes('User already registered')) {
+          return { data, error: { message: 'An account with this email already exists. Please sign in instead.' } };
+        } else if (error.message?.includes('Password should be')) {
+          return { data, error: { message: 'Password does not meet requirements. Please ensure it is at least 8 characters with uppercase, lowercase, and numbers.' } };
+        } else if (error.message?.includes('Email address') && error.message?.includes('invalid')) {
+          return { data, error: { message: 'Please enter a valid email address.' } };
+        } else if (error.message?.includes('Signup is disabled')) {
+          return { data, error: { message: 'Account creation is currently disabled. Please contact support.' } };
+        }
+        
+        return { data, error: { message: error.message } };
+      }
+      
+      // Enhanced success logging with user state analysis
+      const userCreated = data?.user?.id;
+      const userConfirmed = data?.user?.email_confirmed_at;
+      const sessionExists = data?.session?.access_token;
+      
+      secureLog('info', 'Sign up response analysis', { 
+        userId: userCreated ? 'present' : 'missing',
+        emailConfirmed: userConfirmed ? 'confirmed' : 'unconfirmed',
+        sessionCreated: sessionExists ? 'present' : 'missing',
+        userRole: data?.user?.role || 'none'
+      });
+      
+      // Return enhanced response with user state information
+      return { 
+        data: data || null, 
+        error: null,
+        userState: {
+          needsConfirmation: !userConfirmed && userCreated,
+          hasSession: !!sessionExists
+        }
+      };
+    } catch (error: any) {
+      secureLog('error', 'Sign up error', error);
+      return { data: null, error: { message: error?.message || 'An unexpected error occurred during account creation' } };
+    }
   },
 
   // Sign in with email and password
   signIn: async (email: string, password: string) => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    return { data, error };
+    try {
+      // Input validation
+      if (!email || !email.trim()) {
+        return { data: null, error: { message: 'Email is required' } };
+      }
+      
+      if (!password || !password.trim()) {
+        return { data: null, error: { message: 'Password is required' } };
+      }
+      
+      if (!validateInput.email(email.trim())) {
+        return { data: null, error: { message: 'Please enter a valid email address' } };
+      }
+      
+      if (password.length < 6) {
+        return { data: null, error: { message: 'Password must be at least 6 characters' } };
+      }
+
+      secureLog('info', 'Attempting sign in', { email: email.substring(0, 3) + '***' });
+
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: validateInput.string(email.trim(), 254),
+        password: password,
+      });
+      
+      if (error) {
+        secureLog('error', 'Sign in failed', { 
+          error: error.message, 
+          code: error.status,
+          email: email.substring(0, 3) + '***'
+        });
+        
+        // Enhanced error handling for common Supabase scenarios
+        if (error.message?.includes('Invalid login credentials')) {
+          // This could mean wrong password OR unconfirmed email
+          return { 
+            data, 
+            error: { 
+              message: 'Sign in failed. This could be due to:\n• Incorrect email or password\n• Unconfirmed email address\n\nPlease check your credentials or look for a verification email.' 
+            } 
+          };
+        } else if (error.message?.includes('Email not confirmed')) {
+          return { 
+            data, 
+            error: { 
+              message: 'Please check your email and click the verification link before signing in. If you didn\'t receive an email, try signing up again.' 
+            } 
+          };
+        } else if (error.message?.includes('Too many requests')) {
+          return { 
+            data, 
+            error: { 
+              message: 'Too many sign-in attempts. Please wait 5 minutes before trying again.' 
+            } 
+          };
+        } else if (error.message?.includes('Signup is disabled')) {
+          return { 
+            data, 
+            error: { 
+              message: 'Account access is currently disabled. Please contact support.' 
+            } 
+          };
+        } else if (error.message?.includes('Email address') && error.message?.includes('invalid')) {
+          return { 
+            data, 
+            error: { 
+              message: 'Please enter a valid email address.' 
+            } 
+          };
+        }
+        
+        return { data, error: { message: error.message } };
+      }
+      
+      // Enhanced success logging
+      const sessionExists = data?.session?.access_token;
+      const userConfirmed = data?.user?.email_confirmed_at;
+      
+      secureLog('info', 'Sign in successful', { 
+        userId: data?.user?.id,
+        hasSession: sessionExists ? 'yes' : 'no',
+        emailConfirmed: userConfirmed ? 'yes' : 'no'
+      });
+      
+      return { data: data || null, error: null };
+    } catch (error: any) {
+      secureLog('error', 'Sign in error', error);
+      return { data: null, error: { message: error?.message || 'An unexpected error occurred during sign in' } };
+    }
   },
 
   // Sign out
   signOut: async () => {
-    const { error } = await supabase.auth.signOut();
-    return { error };
+    try {
+      const { error } = await supabase.auth.signOut();
+      return { error };
+    } catch (error) {
+      secureLog('error', 'Sign out error', error);
+      return { error: { message: 'Failed to sign out' } };
+    }
   },
 
-  // Get current session
+  // Get current session with improved error handling
   getSession: async () => {
-    const { data, error } = await supabase.auth.getSession();
-    return { data, error };
+    try {
+      // Remove aggressive timeout and let Supabase handle its own timeouts
+      const { data, error } = await supabase.auth.getSession();
+      
+      if (error) {
+        secureLog('error', 'Get session error', error);
+        return { data: null, error };
+      }
+      
+      return { data, error: null };
+    } catch (error) {
+      secureLog('error', 'Get session error', error);
+      return { data: null, error: { message: 'Failed to get session' } };
+    }
   },
 
   // Get current user
   getUser: async () => {
-    const { data, error } = await supabase.auth.getUser();
-    return { data, error };
+    try {
+      const { data, error } = await supabase.auth.getUser();
+      return { data, error };
+    } catch (error) {
+      secureLog('error', 'Get user error', error);
+      return { data: null, error: { message: 'Failed to get user' } };
+    }
   },
 
   // Listen to auth changes
   onAuthStateChange: (callback: (event: string, session: any) => void) => {
-    return supabase.auth.onAuthStateChange(callback);
+    return supabase.auth.onAuthStateChange((event, session) => {
+      secureLog('info', `Auth state changed: ${event}`, { 
+        hasSession: !!session,
+        userId: session?.user?.id || 'none',
+        emailConfirmed: session?.user?.email_confirmed_at ? 'yes' : 'no'
+      });
+      callback(event, session);
+    });
+  },
+
+  // Diagnostic function to help debug authentication issues
+  diagnoseAuthIssue: async (email: string) => {
+    try {
+      secureLog('info', 'Running auth diagnostics', { email: email.substring(0, 3) + '***' });
+      
+      // Try to get current session
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      
+      // Try a simple sign-up to test if it works
+      const testResult = await supabase.auth.signUp({
+        email: `test-${Date.now()}@example.com`,
+        password: 'TestPassword123!'
+      });
+
+      const diagnostics = {
+        environment: {
+          isWeb: Platform.OS === 'web',
+          hasWebCrypto: typeof crypto !== 'undefined' && !!crypto.subtle,
+          flowType: (typeof crypto !== 'undefined' && crypto.subtle) ? 'pkce' : 'implicit',
+          userAgent: Platform.OS
+        },
+        supabaseConfig: {
+          hasUrl: !!supabaseUrl,
+          hasAnonKey: !!supabaseAnonKey,
+          urlValid: supabaseUrl?.includes('supabase.co') || supabaseUrl?.includes('localhost'),
+        },
+        session: {
+          hasSession: !!sessionData?.session,
+          sessionError: sessionError?.message || 'none',
+          userId: sessionData?.session?.user?.id || 'none'
+        },
+        signUpTest: {
+          success: !testResult.error,
+          error: testResult.error?.message || 'none',
+          userCreated: !!testResult.data?.user,
+          sessionCreated: !!testResult.data?.session,
+          needsConfirmation: !!testResult.data?.user && !testResult.data?.session
+        }
+      };
+
+      secureLog('info', 'Auth diagnostics completed', diagnostics);
+      return diagnostics;
+    } catch (error) {
+      secureLog('error', 'Auth diagnostics failed', error);
+      return { error: 'Diagnostics failed' };
+    }
   },
 };
 
@@ -153,13 +497,7 @@ export const database = {
   // Sync counters to Supabase
   syncCounters: async (counters: any[], userId: string) => {
     try {
-      // Check if user is authenticated
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError || !session) {
-        return { data: null, error: { message: 'User not authenticated' } };
-      }
-
+      // Trust that the caller has verified authentication - let Supabase handle auth at request level
       const transformedCounters = counters.map(counter => ({
         ...transformCounterToDb(counter),
         user_id: userId,
@@ -170,45 +508,55 @@ export const database = {
         .from('counters')
         .upsert(transformedCounters);
       
+      // Handle specific authentication errors
+      if (error) {
+        secureLog('error', 'Sync counters error', { error: error.message, code: error.code });
+        
+        // Check for authentication-related errors
+        if (error.message?.includes('JWT') || error.message?.includes('not authenticated') || error.code === 'PGRST301') {
+          return { data: null, error: { message: 'User not authenticated' } };
+        }
+      }
+      
       return { data, error };
-    } catch (error) {
-      return { data: null, error };
+    } catch (error: any) {
+      secureLog('error', 'Sync counters exception', error);
+      return { data: null, error: { message: error?.message || 'Failed to sync counters' } };
     }
   },
 
   // Get counters from Supabase
   getCounters: async (userId: string) => {
     try {
-      // Check if user is authenticated
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError || !session) {
-        return { data: null, error: { message: 'User not authenticated' } };
-      }
-
+      // Trust that the caller has verified authentication - let Supabase handle auth at request level
       const { data, error } = await supabase
         .from('counters')
         .select('*')
         .eq('user_id', userId)
         .order('created_at', { ascending: true });
       
+      // Handle specific authentication errors
+      if (error) {
+        secureLog('error', 'Get counters error', { error: error.message, code: error.code });
+        
+        // Check for authentication-related errors
+        if (error.message?.includes('JWT') || error.message?.includes('not authenticated') || error.code === 'PGRST301') {
+          return { data: null, error: { message: 'User not authenticated' } };
+        }
+      }
+      
       const transformedData = data ? data.map(transformCounterFromDb) : null;
       return { data: transformedData, error };
-    } catch (error) {
-      return { data: null, error };
+    } catch (error: any) {
+      secureLog('error', 'Get counters exception', error);
+      return { data: null, error: { message: error?.message || 'Failed to get counters' } };
     }
   },
 
   // Sync sessions to Supabase
   syncSessions: async (sessions: any[], userId: string) => {
     try {
-      // Check if user is authenticated
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError || !session) {
-        return { data: null, error: { message: 'User not authenticated' } };
-      }
-
+      // Trust that the caller has verified authentication - let Supabase handle auth at request level
       const transformedSessions = sessions.map(session => ({
         ...transformSessionToDb(session),
         user_id: userId,
@@ -219,32 +567,48 @@ export const database = {
         .from('sessions')
         .upsert(transformedSessions);
       
+      // Handle specific authentication errors
+      if (error) {
+        secureLog('error', 'Sync sessions error', { error: error.message, code: error.code });
+        
+        // Check for authentication-related errors
+        if (error.message?.includes('JWT') || error.message?.includes('not authenticated') || error.code === 'PGRST301') {
+          return { data: null, error: { message: 'User not authenticated' } };
+        }
+      }
+      
       return { data, error };
-    } catch (error) {
-      return { data: null, error };
+    } catch (error: any) {
+      secureLog('error', 'Sync sessions exception', error);
+      return { data: null, error: { message: error?.message || 'Failed to sync sessions' } };
     }
   },
 
   // Get sessions from Supabase
   getSessions: async (userId: string) => {
     try {
-      // Check if user is authenticated
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError || !session) {
-        return { data: null, error: { message: 'User not authenticated' } };
-      }
-
+      // Trust that the caller has verified authentication - let Supabase handle auth at request level
       const { data, error } = await supabase
         .from('sessions')
         .select('*')
         .eq('user_id', userId)
         .order('start_time', { ascending: false });
       
+      // Handle specific authentication errors
+      if (error) {
+        secureLog('error', 'Get sessions error', { error: error.message, code: error.code });
+        
+        // Check for authentication-related errors
+        if (error.message?.includes('JWT') || error.message?.includes('not authenticated') || error.code === 'PGRST301') {
+          return { data: null, error: { message: 'User not authenticated' } };
+        }
+      }
+      
       const transformedData = data ? data.map(transformSessionFromDb) : null;
       return { data: transformedData, error };
-    } catch (error) {
-      return { data: null, error };
+    } catch (error: any) {
+      secureLog('error', 'Get sessions exception', error);
+      return { data: null, error: { message: error?.message || 'Failed to get sessions' } };
     }
   },
 };

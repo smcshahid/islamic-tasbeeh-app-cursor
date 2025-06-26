@@ -20,7 +20,14 @@
     "scheme": "tasbeeh-app",
     "plugins": [
       "expo-router",
-      "expo-notifications"
-    ]
+      "expo-notifications",
+      "expo-secure-store"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "0273799a-9917-4cae-ad12-50a19bf22785"
+      }
+    }
   }
 }

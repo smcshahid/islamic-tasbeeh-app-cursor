@@ -1,86 +1,153 @@
-# Supabase Setup Guide for Tasbeeh App
+# 🚀 Supabase Setup Guide - Tasbeeh App
 
-This guide will help you set up Supabase for the Tasbeeh App to enable authentication and cloud sync functionality.
+This guide provides step-by-step instructions for setting up Supabase backend infrastructure for the Tasbeeh application, including database schema, authentication, and security configuration.
 
-## 🚀 Quick Setup
+## 🎯 Overview
+
+### What You'll Set Up
+- **Database**: PostgreSQL tables for counters and sessions
+- **Authentication**: Email/password with guest mode support
+- **Security**: Row Level Security (RLS) policies
+- **API**: Auto-generated REST endpoints
+- **Real-time**: Live data synchronization
+
+### Prerequisites
+- Supabase account (free tier available)
+- Basic understanding of PostgreSQL
+- Admin access to your Supabase project
+
+## 🔧 Initial Setup
 
 ### 1. Create Supabase Project
 
-1. Go to [Supabase](https://supabase.com) and sign up/login
-2. Click "New Project"
-3. Choose your organization
-4. Enter project details:
-   - **Name**: `tasbeeh-app` (or your preferred name)
-   - **Database Password**: Generate a strong password
+1. **Visit** [database.new](https://database.new)
+2. **Sign in** with GitHub, Google, or email
+3. **Create New Project**:
+   - **Organization**: Select or create
+   - **Name**: `tasbeeh-app-production` (or your preferred name)
+   - **Database Password**: Generate strong password (save it securely)
    - **Region**: Choose closest to your users
-5. Click "Create new project"
+   - **Pricing Plan**: Start with Free tier
 
-### 2. Get Project Credentials
+4. **Wait** for project initialization (1-2 minutes)
 
-Once your project is created:
+### 2. Get API Credentials
 
-1. Go to **Settings** → **API**
-2. Copy the following values:
-   - **Project URL** (something like `https://abcdefgh.supabase.co`)
-   - **anon/public key** (starts with `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`)
+1. **Navigate** to `Settings` → `API`
+2. **Copy** the following values:
+   ```
+   Project URL: https://your-project-id.supabase.co
+   Anon Key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+   Service Role Key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+   ```
 
-### 3. Configure the App
+3. **Add** to your `.env` file:
+   ```env
+   EXPO_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
+   EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
+   # Keep service role key secure - don't expose to client
+   SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
+   ```
 
-1. Open `src/utils/supabase.ts`
-2. Replace the placeholder values:
+## 🗄️ Database Schema
 
-```typescript
-// Replace these with your actual Supabase credentials
-const supabaseUrl = 'YOUR_SUPABASE_URL'; // Replace with your Project URL
-const supabaseAnonKey = 'YOUR_SUPABASE_ANON_KEY'; // Replace with your anon key
-```
+### 1. Create Tables
 
-Example:
-```typescript
-const supabaseUrl = 'https://abcdefgh.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFiY2RlZmdoIiwicm9sZSI6ImFub24iLCJpYXQiOjE2ODk1NzEyMDAsImV4cCI6MjAwNTE0NzIwMH0.example';
-```
-
-## 📊 Database Schema Setup
-
-### 4. Create Database Tables
-
-Go to **SQL Editor** in your Supabase dashboard and run the following SQL:
+Navigate to `SQL Editor` and execute the following SQL:
 
 ```sql
+-- Enable necessary extensions
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
 -- Create counters table
 CREATE TABLE public.counters (
-    id TEXT PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     count INTEGER DEFAULT 0,
     target INTEGER,
-    color TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT '#22C55E',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Create sessions table
 CREATE TABLE public.sessions (
-    id TEXT PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-    counter_id TEXT NOT NULL,
+    counter_id UUID REFERENCES public.counters(id) ON DELETE CASCADE,
     counter_name TEXT NOT NULL,
     start_time TIMESTAMPTZ NOT NULL,
     end_time TIMESTAMPTZ,
-    start_count INTEGER DEFAULT 0,
-    end_count INTEGER DEFAULT 0,
-    duration INTEGER DEFAULT 0,
+    start_count INTEGER NOT NULL DEFAULT 0,
+    end_count INTEGER NOT NULL DEFAULT 0,
+    duration INTEGER DEFAULT 0, -- in seconds
     total_counts INTEGER DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Enable Row Level Security for tables
+-- Create user preferences table
+CREATE TABLE public.user_preferences (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE UNIQUE,
+    theme TEXT DEFAULT 'auto' CHECK (theme IN ('light', 'dark', 'auto')),
+    language TEXT DEFAULT 'en' CHECK (language IN ('en', 'ar')),
+    haptic_feedback BOOLEAN DEFAULT true,
+    notifications BOOLEAN DEFAULT true,
+    auto_sync BOOLEAN DEFAULT false,
+    default_counter UUID REFERENCES public.counters(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create achievements table (for future use)
+CREATE TABLE public.user_achievements (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    achievement_id TEXT NOT NULL,
+    unlocked_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(user_id, achievement_id)
+);
+
+-- Add indexes for performance
+CREATE INDEX idx_counters_user_id ON public.counters(user_id);
+CREATE INDEX idx_sessions_user_id ON public.sessions(user_id);
+CREATE INDEX idx_sessions_counter_id ON public.sessions(counter_id);
+CREATE INDEX idx_sessions_start_time ON public.sessions(start_time);
+CREATE INDEX idx_user_preferences_user_id ON public.user_preferences(user_id);
+CREATE INDEX idx_achievements_user_id ON public.user_achievements(user_id);
+
+-- Add updated_at trigger function
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Add triggers for updated_at
+CREATE TRIGGER update_counters_updated_at BEFORE UPDATE ON public.counters
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_sessions_updated_at BEFORE UPDATE ON public.sessions
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_user_preferences_updated_at BEFORE UPDATE ON public.user_preferences
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+```
+
+### 2. Set up Row Level Security (RLS)
+
+```sql
+-- Enable RLS on all tables
 ALTER TABLE public.counters ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_preferences ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_achievements ENABLE ROW LEVEL SECURITY;
 
--- Create policies for counters table
+-- Counters policies
 CREATE POLICY "Users can view their own counters" ON public.counters
     FOR SELECT USING (auth.uid() = user_id);
 
@@ -93,7 +160,7 @@ CREATE POLICY "Users can update their own counters" ON public.counters
 CREATE POLICY "Users can delete their own counters" ON public.counters
     FOR DELETE USING (auth.uid() = user_id);
 
--- Create policies for sessions table
+-- Sessions policies
 CREATE POLICY "Users can view their own sessions" ON public.sessions
     FOR SELECT USING (auth.uid() = user_id);
 
@@ -106,111 +173,402 @@ CREATE POLICY "Users can update their own sessions" ON public.sessions
 CREATE POLICY "Users can delete their own sessions" ON public.sessions
     FOR DELETE USING (auth.uid() = user_id);
 
--- Create indexes for better performance
-CREATE INDEX idx_counters_user_id ON public.counters(user_id);
-CREATE INDEX idx_sessions_user_id ON public.sessions(user_id);
-CREATE INDEX idx_sessions_counter_id ON public.sessions(counter_id);
-CREATE INDEX idx_sessions_start_time ON public.sessions(start_time);
+-- User preferences policies
+CREATE POLICY "Users can view their own preferences" ON public.user_preferences
+    FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert their own preferences" ON public.user_preferences
+    FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update their own preferences" ON public.user_preferences
+    FOR UPDATE USING (auth.uid() = user_id);
+
+-- Achievements policies
+CREATE POLICY "Users can view their own achievements" ON public.user_achievements
+    FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert their own achievements" ON public.user_achievements
+    FOR INSERT WITH CHECK (auth.uid() = user_id);
 ```
 
-### 5. Configure Authentication
+### 3. Create Helper Functions
 
-1. Go to **Authentication** → **Settings**
-2. Configure **Site URL**: 
-   - For development: `http://localhost:8081`
-   - For production: your app's URL
-3. Add **Redirect URLs** (if needed):
-   - `http://localhost:8081/**`
-   - Your production domain
-4. **Email Templates** (optional): Customize welcome/reset emails
+```sql
+-- Function to create default counter for new users
+CREATE OR REPLACE FUNCTION create_default_counter_for_user()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO public.counters (user_id, name, color)
+    VALUES (NEW.id, 'Default', '#22C55E');
+    
+    INSERT INTO public.user_preferences (user_id)
+    VALUES (NEW.id);
+    
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
 
-## 🔧 Advanced Configuration
+-- Trigger to create default data for new users
+CREATE TRIGGER on_auth_user_created
+    AFTER INSERT ON auth.users
+    FOR EACH ROW EXECUTE FUNCTION create_default_counter_for_user();
 
-### 6. Email Configuration (Optional)
+-- Function to calculate user statistics
+CREATE OR REPLACE FUNCTION get_user_stats(p_user_id UUID)
+RETURNS JSON AS $$
+DECLARE
+    result JSON;
+BEGIN
+    SELECT json_build_object(
+        'total_counts', COALESCE(SUM(count), 0),
+        'total_counters', COUNT(*),
+        'total_sessions', (
+            SELECT COUNT(*) FROM public.sessions WHERE user_id = p_user_id
+        ),
+        'total_time_minutes', (
+            SELECT COALESCE(SUM(duration), 0) / 60 FROM public.sessions WHERE user_id = p_user_id
+        ),
+        'latest_activity', (
+            SELECT MAX(updated_at) FROM public.counters WHERE user_id = p_user_id
+        )
+    ) INTO result
+    FROM public.counters
+    WHERE user_id = p_user_id;
+    
+    RETURN result;
+END;
+$$ language 'plpgsql';
+```
 
-For production, configure custom SMTP:
+## 🔐 Authentication Setup
 
-1. Go to **Settings** → **Auth**
-2. Scroll to **SMTP Settings**
-3. Enable custom SMTP and enter your email provider details
+### 1. Configure Auth Settings
 
-### 7. Security Settings
+1. **Navigate** to `Authentication` → `Settings`
+2. **Configure** the following:
 
-1. **JWT Settings**: Keep default values
-2. **Password Policy**: Configure minimum requirements
-3. **Rate Limiting**: Adjust if needed for your use case
+```json
+{
+  "site_url": "https://your-app-domain.com",
+  "additional_redirect_urls": [
+    "exp://localhost:8081",
+    "tasbeeh-app://auth",
+    "https://your-app.netlify.app"
+  ],
+  "jwt_expiry": 3600,
+  "refresh_token_rotation_enabled": true,
+  "double_confirm_changes_enabled": false,
+  "enable_signup": true,
+  "enable_manual_linking": false
+}
+```
 
-## 🧪 Testing the Setup
+### 2. Email Templates (Optional)
 
-### 8. Test Authentication
+Navigate to `Authentication` → `Email Templates` and customize:
 
-1. Start your Expo app: `npx expo start`
-2. Navigate to the Auth screen (`/auth`)
-3. Try signing up with a test email
-4. Check **Authentication** → **Users** in Supabase dashboard
-5. Try signing in with the same credentials
+**Confirm Signup Template**:
+```html
+<h2>Welcome to Tasbeeh App!</h2>
+<p>Thank you for joining our spiritual journey. Please confirm your email to start using cloud sync.</p>
+<p><a href="{{ .ConfirmationURL }}">Confirm your email</a></p>
+<p>May Allah bless your dhikr practice.</p>
+```
 
-### 9. Test Data Sync
+**Reset Password Template**:
+```html
+<h2>Reset Your Tasbeeh App Password</h2>
+<p>Someone requested a password reset for your account.</p>
+<p><a href="{{ .ConfirmationURL }}">Reset your password</a></p>
+<p>If you didn't request this, please ignore this email.</p>
+```
 
-1. Sign in to the app
-2. Create some counters and count
-3. Go to **Table Editor** in Supabase dashboard
-4. Check that data appears in `counters` and `sessions` tables
+### 3. Enable Providers (Optional)
 
-## 🔒 Security Checklist
+For social authentication (future enhancement):
+1. **Navigate** to `Authentication` → `Providers`
+2. **Enable** desired providers:
+   - Google (for Gmail users)
+   - Apple (for iOS users)
+   - GitHub (for developers)
 
-- ✅ Row Level Security enabled on all tables
-- ✅ Policies restrict access to user's own data
-- ✅ anon key is used (not service role key)
-- ✅ Database passwords are strong
-- ✅ Site URLs are configured correctly
+## 🔒 Security Configuration
 
-## 🚨 Troubleshooting
+### 1. API Settings
+
+Navigate to `Settings` → `API` and configure:
+
+```json
+{
+  "db_schema": "public",
+  "db_extra_search_path": "public",
+  "max_rows": 1000,
+  "db_use_legacy_gucs": false
+}
+```
+
+### 2. Rate Limiting
+
+```sql
+-- Create rate limiting function
+CREATE OR REPLACE FUNCTION check_rate_limit(
+    p_user_id UUID,
+    p_action TEXT,
+    p_max_requests INTEGER DEFAULT 100,
+    p_window_seconds INTEGER DEFAULT 3600
+)
+RETURNS BOOLEAN AS $$
+DECLARE
+    request_count INTEGER;
+BEGIN
+    -- Count requests in the time window
+    SELECT COUNT(*)
+    INTO request_count
+    FROM auth.audit_log_entries
+    WHERE 
+        payload->>'user_id' = p_user_id::TEXT
+        AND payload->>'action' = p_action
+        AND created_at > NOW() - INTERVAL '1 second' * p_window_seconds;
+    
+    RETURN request_count < p_max_requests;
+END;
+$$ language 'plpgsql';
+```
+
+### 3. Audit Logging
+
+```sql
+-- Create audit log table
+CREATE TABLE public.audit_log (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES auth.users(id),
+    action TEXT NOT NULL,
+    table_name TEXT NOT NULL,
+    row_id UUID,
+    old_values JSONB,
+    new_values JSONB,
+    ip_address INET,
+    user_agent TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Enable RLS on audit log
+ALTER TABLE public.audit_log ENABLE ROW LEVEL SECURITY;
+
+-- Only allow viewing own audit logs
+CREATE POLICY "Users can view their own audit logs" ON public.audit_log
+    FOR SELECT USING (auth.uid() = user_id);
+
+-- Create audit trigger function
+CREATE OR REPLACE FUNCTION audit_trigger_function()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO public.audit_log (
+        user_id,
+        action,
+        table_name,
+        row_id,
+        old_values,
+        new_values
+    ) VALUES (
+        auth.uid(),
+        TG_OP,
+        TG_TABLE_NAME,
+        COALESCE(NEW.id, OLD.id),
+        CASE WHEN TG_OP = 'DELETE' THEN to_jsonb(OLD) ELSE NULL END,
+        CASE WHEN TG_OP = 'INSERT' OR TG_OP = 'UPDATE' THEN to_jsonb(NEW) ELSE NULL END
+    );
+    
+    RETURN COALESCE(NEW, OLD);
+END;
+$$ language 'plpgsql';
+
+-- Add audit triggers to important tables
+CREATE TRIGGER audit_counters
+    AFTER INSERT OR UPDATE OR DELETE ON public.counters
+    FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
+
+CREATE TRIGGER audit_sessions
+    AFTER INSERT OR UPDATE OR DELETE ON public.sessions
+    FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
+```
+
+## 📊 Testing & Validation
+
+### 1. Test Basic Operations
+
+```sql
+-- Test data insertion (replace with actual user ID)
+INSERT INTO public.counters (user_id, name, color, target)
+VALUES ('your-user-id-here', 'Test Counter', '#3B82F6', 100);
+
+-- Test data retrieval
+SELECT * FROM public.counters WHERE user_id = 'your-user-id-here';
+
+-- Test session creation
+INSERT INTO public.sessions (
+    user_id, 
+    counter_id, 
+    counter_name, 
+    start_time, 
+    start_count
+) VALUES (
+    'your-user-id-here',
+    (SELECT id FROM public.counters WHERE name = 'Test Counter' LIMIT 1),
+    'Test Counter',
+    NOW(),
+    0
+);
+```
+
+### 2. Verify RLS Policies
+
+```sql
+-- Test RLS (should return empty for other users)
+SET request.jwt.claims TO '{"sub": "different-user-id"}';
+SELECT * FROM public.counters; -- Should return no rows
+
+-- Reset to your user
+SET request.jwt.claims TO '{"sub": "your-user-id-here"}';
+SELECT * FROM public.counters; -- Should return your data
+```
+
+### 3. Performance Testing
+
+```sql
+-- Check query performance
+EXPLAIN ANALYZE SELECT * FROM public.counters WHERE user_id = 'your-user-id-here';
+EXPLAIN ANALYZE SELECT * FROM public.sessions WHERE user_id = 'your-user-id-here' ORDER BY start_time DESC;
+```
+
+## 🚀 Production Considerations
+
+### 1. Backup Configuration
+
+1. **Navigate** to `Settings` → `Database`
+2. **Enable** Point-in-Time Recovery (PITR)
+3. **Set** backup retention to at least 7 days
+4. **Schedule** weekly full backups
+
+### 2. Monitoring Setup
+
+```sql
+-- Create monitoring views
+CREATE VIEW user_activity_summary AS
+SELECT 
+    DATE_TRUNC('day', created_at) as date,
+    COUNT(DISTINCT user_id) as active_users,
+    COUNT(*) as total_sessions,
+    AVG(duration) as avg_session_duration
+FROM public.sessions
+GROUP BY DATE_TRUNC('day', created_at)
+ORDER BY date DESC;
+
+CREATE VIEW popular_counter_names AS
+SELECT 
+    name,
+    COUNT(*) as usage_count,
+    AVG(count) as avg_count
+FROM public.counters
+GROUP BY name
+ORDER BY usage_count DESC;
+```
+
+### 3. Performance Optimization
+
+```sql
+-- Add additional indexes for complex queries
+CREATE INDEX idx_sessions_user_date ON public.sessions(user_id, DATE_TRUNC('day', start_time));
+CREATE INDEX idx_counters_name_pattern ON public.counters USING gin(name gin_trgm_ops);
+
+-- Create materialized view for statistics
+CREATE MATERIALIZED VIEW user_statistics AS
+SELECT 
+    user_id,
+    COUNT(DISTINCT c.id) as total_counters,
+    SUM(c.count) as total_counts,
+    COUNT(DISTINCT s.id) as total_sessions,
+    EXTRACT(EPOCH FROM (MAX(s.end_time) - MIN(s.start_time))) / 86400 as days_active
+FROM public.counters c
+LEFT JOIN public.sessions s ON c.user_id = s.user_id
+GROUP BY user_id;
+
+-- Refresh materialized view daily
+CREATE OR REPLACE FUNCTION refresh_user_statistics()
+RETURNS void AS $$
+BEGIN
+    REFRESH MATERIALIZED VIEW user_statistics;
+END;
+$$ language 'plpgsql';
+```
+
+## 🔧 Environment-Specific Setup
+
+### Development Environment
+```env
+EXPO_PUBLIC_SUPABASE_URL=https://your-dev-project.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your-dev-anon-key
+EXPO_PUBLIC_APP_ENV=development
+EXPO_PUBLIC_ENABLE_LOGGING=true
+EXPO_PUBLIC_LOG_LEVEL=debug
+```
+
+### Production Environment
+```env
+EXPO_PUBLIC_SUPABASE_URL=https://your-prod-project.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your-prod-anon-key
+EXPO_PUBLIC_APP_ENV=production
+EXPO_PUBLIC_ENABLE_LOGGING=false
+EXPO_PUBLIC_LOG_LEVEL=error
+```
+
+## 🆘 Troubleshooting
 
 ### Common Issues
 
-**"Invalid API key" error:**
-- Check that you copied the correct anon key
-- Ensure no extra spaces in the key
+1. **RLS Policy Errors**
+   ```sql
+   -- Check if RLS is enabled
+   SELECT schemaname, tablename, rowsecurity 
+   FROM pg_tables 
+   WHERE schemaname = 'public';
+   
+   -- Check existing policies
+   SELECT * FROM pg_policies WHERE schemaname = 'public';
+   ```
 
-**"Table doesn't exist" error:**
-- Run the SQL schema setup commands
-- Check table names match exactly
+2. **Authentication Issues**
+   ```sql
+   -- Check user creation
+   SELECT * FROM auth.users ORDER BY created_at DESC LIMIT 5;
+   
+   -- Check email confirmation status
+   SELECT id, email, email_confirmed_at FROM auth.users WHERE email = 'user@example.com';
+   ```
 
-**"Row Level Security" policy error:**
-- Ensure RLS policies are created
-- Check user is authenticated when making requests
+3. **Performance Issues**
+   ```sql
+   -- Check slow queries
+   SELECT query, calls, total_time, mean_time 
+   FROM pg_stat_statements 
+   ORDER BY total_time DESC LIMIT 10;
+   ```
 
-**Authentication not working:**
-- Verify Site URL configuration
-- Check redirect URLs are correct
-- Ensure email confirmation is not required (for testing)
+### Support Resources
 
-### Debug Mode
+- **Supabase Documentation**: https://supabase.com/docs
+- **Community Discord**: https://discord.supabase.com
+- **GitHub Issues**: https://github.com/supabase/supabase/issues
+- **Stack Overflow**: Tag with `supabase`
 
-To debug Supabase issues:
+## 📞 Next Steps
 
-1. Open browser dev tools
-2. Check Network tab for failed requests
-3. Look for error messages in Console
-4. Check Supabase logs in dashboard
-
-## 📱 Production Deployment
-
-For production deployment:
-
-1. **Update Site URLs** with your production domain
-2. **Configure custom SMTP** for email delivery
-3. **Set up proper redirect URLs**
-4. **Consider upgrading** from free tier if needed
-5. **Set up monitoring** and alerts
-
-## 📞 Support
-
-- **Supabase Docs**: https://supabase.com/docs
-- **Community**: https://supabase.com/discord
-- **GitHub Issues**: Create an issue in this repository
+1. **Test** the setup with your mobile app
+2. **Monitor** the database performance
+3. **Set up** backup procedures
+4. **Configure** alerts for critical issues
+5. **Plan** for scaling as users grow
 
 ---
 
-**🕌 May Allah accept our dhikr and grant us success in this endeavor. Ameen.** 
+**🎉 Congratulations!** Your Supabase backend is now ready for the Tasbeeh app. This setup provides a solid foundation for a scalable, secure Islamic prayer counter application. 

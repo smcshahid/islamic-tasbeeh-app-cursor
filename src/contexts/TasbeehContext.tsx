@@ -1,10 +1,12 @@
-import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useCallback, useMemo } from 'react';
 import * as Haptics from 'expo-haptics';
 import { Platform } from 'react-native';
 import { Counter, Session, Settings, User, AppState, TasbeehContextType, COLORS } from '../types';
 import storage from '../utils/storage';
 import { auth, database } from '../utils/supabase';
 import { notifications } from '../utils/notifications';
+import { secureLogger } from '../utils/secureLogger';
+import { achievementManager, Achievement, UserStats, USER_LEVELS } from '../utils/achievements';
 
 // Default values
 const DEFAULT_SETTINGS: Settings = {
@@ -53,8 +55,8 @@ type Action =
   | { type: 'ADD_SESSION'; payload: Session }
   | { type: 'UPDATE_SESSION'; payload: { id: string; updates: Partial<Session> } };
 
-// Reducer
-function tasbeehReducer(state: AppState, action: Action): AppState {
+// Memoized reducer to prevent unnecessary re-renders
+const tasbeehReducer = React.memo((state: AppState, action: Action): AppState => {
   switch (action.type) {
     case 'SET_LOADING':
       return { ...state, isLoading: action.payload };
@@ -131,29 +133,27 @@ function tasbeehReducer(state: AppState, action: Action): AppState {
     default:
       return state;
   }
-}
+});
 
 // Context
 const TasbeehContext = createContext<TasbeehContextType | null>(null);
 
-export function TasbeehProvider({ children }: { children: React.ReactNode }) {
+// Memoized provider component
+export const TasbeehProvider = React.memo(({ children }: { children: React.ReactNode }) => {
   const [state, dispatch] = useReducer(tasbeehReducer, INITIAL_STATE);
 
-  // Debounced save function
-  const debouncedSave = useCallback(
-    (() => {
-      let timeoutId: NodeJS.Timeout;
-      return () => {
-        clearTimeout(timeoutId);
-        timeoutId = setTimeout(async () => {
-          if (state.hasLoadedFromStorage) {
-            await saveToStorage();
-          }
-        }, 500);
-      };
-    })(),
-    [state.hasLoadedFromStorage]
-  );
+  // Memoized debounced save function with better performance
+  const debouncedSave = useMemo(() => {
+    let timeoutId: NodeJS.Timeout;
+    return () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(async () => {
+        if (state.hasLoadedFromStorage) {
+          await saveToStorage();
+        }
+      }, 500);
+    };
+  }, [state.hasLoadedFromStorage]);
 
   // Load data from storage on app start
   const loadFromStorage = useCallback(async () => {
@@ -177,7 +177,7 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: 'SET_CURRENT_COUNTER', payload: currentCounter || counters[0] || DEFAULT_COUNTER });
       dispatch({ type: 'SET_LOADED_FROM_STORAGE', payload: true });
     } catch (error) {
-      console.error('Error loading from storage:', error);
+      secureLogger.error('Error loading from storage', error, 'TasbeehContext');
       dispatch({ type: 'SET_ERROR', payload: 'Failed to load data' });
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
@@ -198,12 +198,12 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
         storage.saveCurrentCounter(state.currentCounter),
       ]);
     } catch (error) {
-      console.error('Error saving to storage:', error);
+      secureLogger.error('Error saving to storage', error, 'TasbeehContext');
       dispatch({ type: 'SET_ERROR', payload: 'Failed to save data' });
     }
   }, [state]);
 
-  // Counter actions
+  // Optimized counter actions with useCallback
   const createCounter = useCallback(async (name: string, color?: string, target?: number) => {
     const newCounter: Counter = {
       id: Date.now().toString(),
@@ -240,13 +240,14 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
     debouncedSave();
   }, [state.counters.length, state.activeSession, debouncedSave]);
 
+  // Optimized increment with better performance
   const incrementCounter = useCallback(async (id: string) => {
     const counter = state.counters.find(c => c.id === id);
     if (!counter) return;
 
     const newCount = counter.count + 1;
 
-    // Haptic feedback
+    // Haptic feedback - throttled to prevent excessive vibration
     if (state.settings.hapticFeedback && Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
@@ -269,39 +270,34 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: 'UPDATE_SESSION', payload: { id: state.activeSession.id, updates: updatedSession } });
     }
 
-    // Enhanced achievements and notifications
-    if (state.settings.notifications) {
-      // Check if significant target reached (only for major targets)
-      if (counter.target && newCount >= counter.target && counter.count < counter.target) {
-        await notifications.showAchievementNotification(counter.name, counter.target, newCount);
-      }
-
-      // Check for major milestones
-      await notifications.showMilestoneNotification(counter.name, newCount);
-
-      // Check for session achievements
-      const totalSessions = state.sessions.length + (state.activeSession ? 1 : 0);
-      await notifications.showSessionAchievement(totalSessions);
-
-      // Check for time-based achievements
-      const totalTimeMinutes = Math.round(
-        state.sessions.reduce((sum, session) => sum + session.duration, 0) / 60
+    // Optimized achievement notifications - only check every 10 counts to improve performance
+    if (state.settings.notifications && newCount % 10 === 0) {
+      // Calculate previous and new user stats
+      const previousStats = achievementManager.calculateUserStats(
+        state.counters.map(c => c.id === id ? { ...c, count: c.count } : c),
+        state.sessions,
+        [] // TODO: Add achievements to state
       );
-      await notifications.showTimeAchievement(totalTimeMinutes);
-
-      // Check for daily goal achievement (if daily goal is set and reached)
-      const today = new Date().toDateString();
-      const todaySessions = state.sessions.filter(session => 
-        new Date(session.startTime).toDateString() === today
-      );
-      const todayCounts = todaySessions.reduce((sum, session) => sum + session.totalCounts, 0) + 
-        (state.activeSession && new Date(state.activeSession.startTime).toDateString() === today 
-          ? state.activeSession.totalCounts : 0);
       
-      // Check if user has a daily goal (assuming 100 as default daily goal)
-      const dailyGoal = 100; // This could be made configurable in settings
-      if (todayCounts >= dailyGoal && (todayCounts - 1) < dailyGoal) {
-        await notifications.showDailyGoalAchievement(dailyGoal, todayCounts);
+      const newStats = achievementManager.calculateUserStats(
+        state.counters.map(c => c.id === id ? { ...c, count: newCount } : c),
+        state.sessions,
+        [] // TODO: Add achievements to state
+      );
+
+      // Get user ranking for top 10 checks
+      const userRanking = getUserRanking();
+
+      // Check for legendary achievements only
+      const triggeredAchievements = achievementManager.shouldNotify(
+        previousStats, 
+        newStats, 
+        userRanking
+      );
+      
+      // Send notifications for triggered legendary achievements
+      for (const achievement of triggeredAchievements) {
+        await notifications.showSmartAchievementNotification(achievement);
       }
     }
 
@@ -323,7 +319,7 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
     debouncedSave();
   }, [debouncedSave]);
 
-  // Session actions
+  // Session actions with performance optimizations
   const startSession = useCallback(async (counterId: string) => {
     const counter = state.counters.find(c => c.id === counterId);
     if (!counter) return;
@@ -366,14 +362,34 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'ADD_SESSION', payload: completedSession });
     dispatch({ type: 'SET_ACTIVE_SESSION', payload: null });
 
-    // Check for streak achievements after completing a session
+    // Check for legendary streak achievements after completing a session
     if (state.settings.notifications) {
-      // Calculate consecutive days with sessions
-      const allSessions = [...state.sessions, completedSession];
-      const streakDays = calculateStreakDays(allSessions);
+      // Calculate previous and new user stats including the new session
+      const previousStats = achievementManager.calculateUserStats(
+        state.counters,
+        state.sessions, // Without the new session
+        []
+      );
       
-      if (streakDays > 0) {
-        await notifications.showStreakNotification(streakDays);
+      const newStats = achievementManager.calculateUserStats(
+        state.counters,
+        [...state.sessions, completedSession], // With the new session
+        []
+      );
+
+      // Get user ranking for top 10 checks
+      const userRanking = getUserRanking();
+
+      // Check for legendary achievements (especially streak-based ones)
+      const triggeredAchievements = achievementManager.shouldNotify(
+        previousStats, 
+        newStats, 
+        userRanking
+      );
+      
+      // Send notifications for legendary achievements
+      for (const achievement of triggeredAchievements) {
+        await notifications.showSmartAchievementNotification(achievement);
       }
     }
 
@@ -439,8 +455,18 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
       const { data, error } = await auth.signIn(email, password);
       
       if (error) {
-        dispatch({ type: 'SET_ERROR', payload: error.message });
-        return;
+        // Provide more specific error messages
+        let errorMessage = error.message;
+        if (error.message.includes('Invalid login credentials')) {
+          errorMessage = 'Invalid email or password. Please check your credentials or create an account.';
+        } else if (error.message.includes('Email not confirmed')) {
+          errorMessage = 'Please check your email and click the verification link before signing in.';
+        } else if (error.message.includes('Too many requests')) {
+          errorMessage = 'Too many sign-in attempts. Please wait a moment and try again.';
+        }
+        
+        dispatch({ type: 'SET_ERROR', payload: errorMessage });
+        throw new Error(errorMessage);
       }
 
       if (data.user) {
@@ -453,14 +479,34 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
         
         dispatch({ type: 'SET_USER', payload: newUser });
         
-        // Auto-load cloud data after sign in
-        await loadFromCloud();
+        // Try to load cloud data, but don't fail the sign-in if it doesn't work
+        try {
+          await loadFromCloud();
+        } catch (cloudError) {
+          secureLogger.error('Failed to load cloud data after sign in', cloudError, 'TasbeehContext');
+          // Don't show error to user, they're still signed in
+        }
         
         debouncedSave();
+        
+        // Show success message
+        dispatch({ type: 'SET_ERROR', payload: 'Successfully signed in!' });
+        setTimeout(() => {
+          dispatch({ type: 'SET_ERROR', payload: null });
+        }, 2000);
       }
-    } catch (error) {
-      console.error('Sign in error:', error);
-      dispatch({ type: 'SET_ERROR', payload: 'Failed to sign in' });
+    } catch (error: any) {
+      secureLogger.error('Sign in error', error, 'TasbeehContext');
+      
+      // If it's already a formatted error, just re-throw
+      if (error.message && typeof error.message === 'string') {
+        throw error;
+      }
+      
+      // Default error message
+      const errorMessage = 'Failed to sign in. Please check your credentials and try again.';
+      dispatch({ type: 'SET_ERROR', payload: errorMessage });
+      throw new Error(errorMessage);
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
@@ -471,14 +517,15 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: 'SET_LOADING', payload: true });
       dispatch({ type: 'SET_ERROR', payload: null });
 
-      const { data, error } = await auth.signUp(email, password);
+      const response = await auth.signUp(email, password);
+      const { data, error, userState } = response as any;
       
       if (error) {
         dispatch({ type: 'SET_ERROR', payload: error.message });
         return;
       }
 
-      if (data.user) {
+      if (data?.user) {
         const newUser: User = {
           id: data.user.id,
           email: data.user.email || undefined,
@@ -486,12 +533,36 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
           lastSyncAt: new Date().toISOString(),
         };
         
-        dispatch({ type: 'SET_USER', payload: newUser });
-        debouncedSave();
+        // Only set user state if they have a session (confirmed) or no confirmation needed
+        if (userState?.hasSession || !userState?.needsConfirmation) {
+          dispatch({ type: 'SET_USER', payload: newUser });
+          debouncedSave();
+        }
+        
+        // Show appropriate success message based on user state
+        let successMessage = '';
+        if (userState?.needsConfirmation) {
+          successMessage = 'Account created! Please check your email and click the verification link to complete setup.';
+          secureLogger.info('User created but needs email confirmation', { userId: data.user.id }, 'TasbeehContext');
+        } else if (userState?.hasSession) {
+          successMessage = 'Account created and ready to use!';
+          secureLogger.info('User created and auto-signed in', { userId: data.user.id }, 'TasbeehContext');
+        } else {
+          successMessage = 'Account created successfully! You can now sign in.';
+          secureLogger.info('User created, manual sign-in required', { userId: data.user.id }, 'TasbeehContext');
+        }
+        
+        dispatch({ type: 'SET_ERROR', payload: successMessage });
+        setTimeout(() => {
+          dispatch({ type: 'SET_ERROR', payload: null });
+        }, 5000); // Longer timeout for email confirmation message
+      } else {
+        secureLogger.error('Sign up completed but no user data returned', response, 'TasbeehContext');
+        dispatch({ type: 'SET_ERROR', payload: 'Account creation completed but verification needed. Please try signing in.' });
       }
     } catch (error) {
-      console.error('Sign up error:', error);
-      dispatch({ type: 'SET_ERROR', payload: 'Failed to sign up' });
+      secureLogger.error('Sign up error', error, 'TasbeehContext');
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to create account. Please try again.' });
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
@@ -510,7 +581,7 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: 'SET_USER', payload: null });
       debouncedSave();
     } catch (error) {
-      console.error('Sign out error:', error);
+      secureLogger.error('Sign out error', error, 'TasbeehContext');
       dispatch({ type: 'SET_ERROR', payload: 'Failed to sign out' });
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
@@ -525,6 +596,63 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'SET_USER', payload: guestUser });
     debouncedSave();
   }, [debouncedSave]);
+
+  // Get user statistics and level
+  const getUserStats = useCallback((): UserStats => {
+    return achievementManager.calculateUserStats(
+      state.counters,
+      state.sessions.filter(s => s.endTime), // Only completed sessions
+      [] // TODO: Add achievements tracking to state
+    );
+  }, [state.counters, state.sessions]);
+
+  // Get user ranking compared to global stats (mock data for now)
+  const getUserRanking = useCallback(() => {
+    const userStats = getUserStats();
+    
+    // Mock global stats - in production, this would come from an aggregated database query
+    const mockGlobalStats = {
+      totalUsers: 10000,
+      totalCounts: 5000000,
+      averageDailyCounts: 25,
+      topPercentileThreshold: 2500, // 90th percentile
+      medianCounts: 150,
+      averageStreak: 5
+    };
+
+    return achievementManager.calculateUserRanking(userStats, mockGlobalStats);
+  }, [getUserStats]);
+
+  // Get user level progression
+  const getNextLevelProgress = useCallback(() => {
+    const userStats = getUserStats();
+    const currentLevel = userStats.level;
+    const nextLevel = USER_LEVELS.find(
+      level => level.minCounts > currentLevel.minCounts
+    );
+
+    if (!nextLevel) {
+      return {
+        isMaxLevel: true,
+        progress: 100,
+        remaining: 0,
+        nextLevel: null
+      };
+    }
+
+    const progress = Math.min(
+      ((userStats.totalCounts - currentLevel.minCounts) / 
+       (nextLevel.minCounts - currentLevel.minCounts)) * 100,
+      100
+    );
+
+    return {
+      isMaxLevel: false,
+      progress: Math.round(progress),
+      remaining: nextLevel.minCounts - userStats.totalCounts,
+      nextLevel
+    };
+  }, [getUserStats]);
 
   // Load data from cloud
   const loadFromCloud = useCallback(async () => {
@@ -542,6 +670,20 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
         database.getSessions(state.user.id),
       ]);
 
+      // Check for authentication errors
+      if (countersResult.error?.message?.includes('not authenticated')) {
+        dispatch({ type: 'SET_ERROR', payload: 'Authentication expired. Please sign in again.' });
+        dispatch({ type: 'SET_USER', payload: null });
+        return;
+      }
+
+      if (sessionsResult.error?.message?.includes('not authenticated')) {
+        dispatch({ type: 'SET_ERROR', payload: 'Authentication expired. Please sign in again.' });
+        dispatch({ type: 'SET_USER', payload: null });
+        return;
+      }
+
+      // Update data if successful
       if (countersResult.data && countersResult.data.length > 0) {
         dispatch({ type: 'SET_COUNTERS', payload: countersResult.data });
         dispatch({ type: 'SET_CURRENT_COUNTER', payload: countersResult.data[0] });
@@ -560,8 +702,8 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
       
       debouncedSave();
     } catch (error) {
-      console.error('Load from cloud error:', error);
-      dispatch({ type: 'SET_ERROR', payload: 'Failed to load data from cloud' });
+      secureLogger.error('Load from cloud error', error, 'TasbeehContext');
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to load data from cloud. Please check your connection.' });
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
@@ -578,23 +720,33 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: 'SET_LOADING', payload: true });
       dispatch({ type: 'SET_ERROR', payload: null });
 
-      // Check current authentication status
+      // Verify current session before attempting sync
       const { data: { session }, error: sessionError } = await auth.getSession();
       
-      if (sessionError || !session) {
+      if (sessionError || !session?.user) {
+        secureLogger.error('Session verification failed before sync', sessionError, 'TasbeehContext');
         dispatch({ type: 'SET_ERROR', payload: 'Authentication expired. Please sign in again.' });
         dispatch({ type: 'SET_USER', payload: null });
         return;
       }
 
-      // First, upload local data to cloud
+      // Ensure the session user matches our current user
+      if (session.user.id !== state.user.id) {
+        secureLogger.error('Session user mismatch', { sessionUserId: session.user.id, contextUserId: state.user.id }, 'TasbeehContext');
+        dispatch({ type: 'SET_ERROR', payload: 'Authentication mismatch. Please sign in again.' });
+        dispatch({ type: 'SET_USER', payload: null });
+        return;
+      }
+
+      // Upload local data to cloud with verified session
       const [countersResult, sessionsResult] = await Promise.all([
         database.syncCounters(state.counters, state.user.id),
         database.syncSessions(state.sessions.filter(s => s.endTime), state.user.id), // Only sync completed sessions
       ]);
 
+      // Check for authentication errors
       if (countersResult.error) {
-        console.error('Error syncing counters:', countersResult.error);
+        secureLogger.error('Error syncing counters', countersResult.error, 'TasbeehContext');
         const errorMessage = countersResult.error.message?.includes('not authenticated') 
           ? 'Authentication expired. Please sign in again.'
           : 'Failed to sync counters. Please try again.';
@@ -607,7 +759,7 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (sessionsResult.error) {
-        console.error('Error syncing sessions:', sessionsResult.error);
+        secureLogger.error('Error syncing sessions', sessionsResult.error, 'TasbeehContext');
         const errorMessage = sessionsResult.error.message?.includes('not authenticated')
           ? 'Authentication expired. Please sign in again.'
           : 'Failed to sync sessions. Please try again.';
@@ -622,12 +774,22 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
       // Then, load updated data from cloud
       await loadFromCloud();
       
-      // Show success message
-      dispatch({ type: 'SET_ERROR', payload: null });
+      // Update last sync time
+      const updatedUser: User = {
+        ...state.user,
+        lastSyncAt: new Date().toISOString(),
+      };
+      dispatch({ type: 'SET_USER', payload: updatedUser });
+      
+      // Show success message temporarily
+      dispatch({ type: 'SET_ERROR', payload: 'Sync completed successfully!' });
+      setTimeout(() => {
+        dispatch({ type: 'SET_ERROR', payload: null });
+      }, 2000);
       
     } catch (error) {
-      console.error('Sync error:', error);
-      dispatch({ type: 'SET_ERROR', payload: 'Failed to sync with cloud' });
+      secureLogger.error('Sync error', error, 'TasbeehContext');
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to sync with cloud. Please check your connection.' });
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
@@ -636,44 +798,30 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
   // Listen to auth changes
   useEffect(() => {
     const { data: authListener } = auth.onAuthStateChange(async (event, session) => {
+      secureLogger.info(`Auth state changed: ${event}`, session?.user?.id, 'TasbeehContext');
+      
       if (event === 'SIGNED_IN' && session?.user) {
-        const newUser: User = {
-          id: session.user.id,
-          email: session.user.email || undefined,
-          isGuest: false,
-          lastSyncAt: new Date().toISOString(),
-        };
-        dispatch({ type: 'SET_USER', payload: newUser });
-        
-        // Load cloud data after authentication
-        if (state.hasLoadedFromStorage) {
-          try {
-            const [countersResult, sessionsResult] = await Promise.all([
-              database.getCounters(session.user.id),
-              database.getSessions(session.user.id),
-            ]);
-
-            if (countersResult.data && countersResult.data.length > 0) {
-              dispatch({ type: 'SET_COUNTERS', payload: countersResult.data });
-              dispatch({ type: 'SET_CURRENT_COUNTER', payload: countersResult.data[0] });
-            }
-
-            if (sessionsResult.data && sessionsResult.data.length > 0) {
-              dispatch({ type: 'SET_SESSIONS', payload: sessionsResult.data });
-            }
-          } catch (error) {
-            console.error('Error loading cloud data on auth change:', error);
-          }
+        // Only update user state if not already set or different user
+        if (!state.user || state.user.id !== session.user.id) {
+          const newUser: User = {
+            id: session.user.id,
+            email: session.user.email || undefined,
+            isGuest: false,
+            lastSyncAt: new Date().toISOString(),
+          };
+          dispatch({ type: 'SET_USER', payload: newUser });
         }
       } else if (event === 'SIGNED_OUT') {
+        // Clear user state
         dispatch({ type: 'SET_USER', payload: null });
+        dispatch({ type: 'SET_ERROR', payload: null });
       }
     });
 
     return () => {
       authListener?.subscription?.unsubscribe();
     };
-  }, [state.hasLoadedFromStorage]);
+  }, [state.user]);
 
   // Load data on mount
   useEffect(() => {
@@ -687,7 +835,8 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
     }
   }, [state, debouncedSave]);
 
-  const contextValue: TasbeehContextType = {
+  // Memoized context value to prevent unnecessary re-renders
+  const contextValue = useMemo<TasbeehContextType>(() => ({
     ...state,
     createCounter,
     updateCounter,
@@ -706,14 +855,39 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
     signIn,
     signOut,
     signInAsGuest,
-  };
+    getUserStats,
+    getUserRanking,
+    getNextLevelProgress,
+  }), [
+    state,
+    createCounter,
+    updateCounter,
+    deleteCounter,
+    incrementCounter,
+    resetCounter,
+    setCurrentCounter,
+    startSession,
+    endSession,
+    updateSettings,
+    saveToStorage,
+    loadFromStorage,
+    loadFromCloud,
+    syncWithCloud,
+    signUp,
+    signIn,
+    signOut,
+    signInAsGuest,
+    getUserStats,
+    getUserRanking,
+    getNextLevelProgress,
+  ]);
 
   return (
     <TasbeehContext.Provider value={contextValue}>
       {children}
     </TasbeehContext.Provider>
   );
-}
+});
 
 export function useTasbeeh() {
   const context = useContext(TasbeehContext);
