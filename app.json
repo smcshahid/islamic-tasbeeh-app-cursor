@@ -19,7 +19,8 @@
     },
     "scheme": "tasbeeh-app",
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "expo-notifications"
     ]
   }
-} 
+}

@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   Alert,
-  useColorScheme,
   SafeAreaView,
   Modal,
   TextInput,
@@ -14,11 +13,11 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTasbeeh } from '../../src/contexts/TasbeehContext';
+import { useAppTheme } from '../../src/utils/theme';
 import { COLORS, Counter } from '../../src/types';
 
 export default function CounterScreen() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  const { isDark } = useAppTheme();
   const {
     currentCounter,
     counters,
@@ -34,8 +33,10 @@ export default function CounterScreen() {
   const [sessionTime, setSessionTime] = useState('0:00');
   const [showCounterSelector, setShowCounterSelector] = useState(false);
   const [showNewCounterModal, setShowNewCounterModal] = useState(false);
+  const [showTargetModal, setShowTargetModal] = useState(false);
   const [newCounterName, setNewCounterName] = useState('');
   const [newCounterTarget, setNewCounterTarget] = useState('');
+  const [targetValue, setTargetValue] = useState('');
   const [selectedColor, setSelectedColor] = useState(COLORS.primary.blue);
 
   // Update session timer
@@ -82,25 +83,23 @@ export default function CounterScreen() {
 
   const handleSetTarget = () => {
     if (!currentCounter) return;
+    setTargetValue(currentCounter.target?.toString() || '');
+    setShowTargetModal(true);
+  };
+
+  const handleSaveTarget = async () => {
+    if (!currentCounter) return;
     
-    Alert.prompt(
-      'Set Target',
-      'Enter your target count:',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Set',
-          onPress: (value) => {
-            const target = parseInt(value || '0', 10);
-            if (target > 0) {
-              updateCounter(currentCounter.id, { target });
-            }
-          },
-        },
-      ],
-      'plain-text',
-      currentCounter.target?.toString() || ''
-    );
+    const target = parseInt(targetValue || '0', 10);
+    if (target > 0) {
+      await updateCounter(currentCounter.id, { target });
+    } else {
+      // Remove target if 0 or invalid
+      await updateCounter(currentCounter.id, { target: undefined });
+    }
+    
+    setShowTargetModal(false);
+    setTargetValue('');
   };
 
   const handleCreateCounter = async () => {
@@ -352,6 +351,99 @@ export default function CounterScreen() {
           </View>
         </SafeAreaView>
       </Modal>
+
+      {/* Target Modal */}
+      <Modal
+        visible={showTargetModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+      >
+        <SafeAreaView style={[styles.modalContainer, { backgroundColor: isDark ? COLORS.neutral.gray900 : COLORS.neutral.white }]}>
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}>
+              Set Target
+            </Text>
+            <TouchableOpacity onPress={() => setShowTargetModal(false)}>
+              <Ionicons name="close" size={24} color={isDark ? COLORS.neutral.white : COLORS.neutral.gray900} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.targetModalContent}>
+            <Text style={[styles.targetSubtitle, { color: isDark ? COLORS.neutral.gray300 : COLORS.neutral.gray600 }]}>
+              Choose your target count for {currentCounter?.name}
+            </Text>
+
+            {/* Preset Target Buttons */}
+            <View style={styles.presetTargetsContainer}>
+              {[33, 99, 100, 300, 500, 1000].map((preset) => (
+                <TouchableOpacity
+                  key={preset}
+                  style={[
+                    styles.presetTargetButton,
+                    { backgroundColor: COLORS.primary.teal },
+                    parseInt(targetValue) === preset && { 
+                      backgroundColor: currentCounter?.color || COLORS.primary.green,
+                      transform: [{ scale: 1.05 }]
+                    }
+                  ]}
+                  onPress={() => setTargetValue(preset.toString())}
+                >
+                  <Text style={styles.presetTargetText}>{preset}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Manual Input */}
+            <Text style={[styles.inputLabel, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}>
+              Or enter custom target:
+            </Text>
+            <TextInput
+              style={[
+                styles.textInput,
+                {
+                  backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.gray100,
+                  color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900,
+                }
+              ]}
+              value={targetValue}
+              onChangeText={setTargetValue}
+              placeholder="Enter target count"
+              placeholderTextColor={isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray500}
+              keyboardType="numeric"
+            />
+
+            {/* Action Buttons */}
+            <View style={styles.targetActionButtons}>
+              <TouchableOpacity
+                style={[styles.targetActionButton, styles.cancelButton]}
+                onPress={() => setShowTargetModal(false)}
+              >
+                <Text style={[styles.targetActionButtonText, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.targetActionButton, { backgroundColor: COLORS.primary.orange }]}
+                onPress={() => {
+                  setTargetValue('');
+                  handleSaveTarget();
+                }}
+              >
+                <Text style={styles.targetActionButtonText}>Remove Target</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.targetActionButton, { backgroundColor: currentCounter?.color || COLORS.primary.green }]}
+                onPress={handleSaveTarget}
+                disabled={!targetValue.trim()}
+              >
+                <Text style={styles.targetActionButtonText}>Set Target</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -560,6 +652,66 @@ const styles = StyleSheet.create({
   createButtonText: {
     color: COLORS.neutral.white,
     fontSize: 18,
+    fontWeight: '600',
+  },
+  // Target Modal Styles
+  targetModalContent: {
+    flex: 1,
+    padding: 20,
+  },
+  targetSubtitle: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  presetTargetsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 12,
+    marginBottom: 32,
+  },
+  presetTargetButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 20,
+    minWidth: 70,
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  presetTargetText: {
+    color: COLORS.neutral.white,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  targetActionButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 24,
+  },
+  targetActionButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  cancelButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: COLORS.neutral.gray300,
+  },
+  targetActionButtonText: {
+    color: COLORS.neutral.white,
+    fontSize: 16,
     fontWeight: '600',
   },
 }); 

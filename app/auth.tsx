@@ -6,7 +6,6 @@ import {
   TextInput,
   TouchableOpacity,
   SafeAreaView,
-  useColorScheme,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -16,12 +15,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useTasbeeh } from '../src/contexts/TasbeehContext';
+import { useAppTheme } from '../src/utils/theme';
 import { COLORS } from '../src/types';
 import { auth } from '../src/utils/supabase';
 
 export default function AuthScreen() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  const { isDark } = useAppTheme();
   const { signIn, signInAsGuest, isLoading } = useTasbeeh();
 
   const [isSignUp, setIsSignUp] = useState(false);

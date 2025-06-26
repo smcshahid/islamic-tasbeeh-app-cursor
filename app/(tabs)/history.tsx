@@ -6,20 +6,19 @@ import {
   SafeAreaView,
   ScrollView,
   TouchableOpacity,
-  useColorScheme,
   Modal,
   FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTasbeeh } from '../../src/contexts/TasbeehContext';
+import { useAppTheme } from '../../src/utils/theme';
 import { COLORS, Session } from '../../src/types';
 
 type FilterType = 'all' | 'today' | 'week' | 'month' | 'counter';
 type SortType = 'newest' | 'oldest' | 'longest' | 'shortest';
 
 export default function HistoryScreen() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  const { isDark } = useAppTheme();
   const { sessions, counters } = useTasbeeh();
 
   const [filter, setFilter] = useState<FilterType>('all');

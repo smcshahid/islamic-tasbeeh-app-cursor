@@ -6,7 +6,6 @@ import {
   SafeAreaView,
   ScrollView,
   TouchableOpacity,
-  useColorScheme,
   Switch,
   Alert,
   Modal,
@@ -15,11 +14,12 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useTasbeeh } from '../../src/contexts/TasbeehContext';
+import { useAppTheme } from '../../src/utils/theme';
+import { notifications } from '../../src/utils/notifications';
 import { COLORS, Counter, ColorKey } from '../../src/types';
 
 export default function SettingsScreen() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  const { isDark } = useAppTheme();
   const {
     settings,
     counters,
@@ -298,6 +298,26 @@ export default function SettingsScreen() {
               />
             }
           />
+
+          {settings.notifications && (
+            <SettingItem
+              icon="megaphone"
+              title="Test Notifications"
+              subtitle="Send a test notification"
+              onPress={async () => {
+                const { granted } = await notifications.requestPermissions();
+                if (granted) {
+                  await notifications.showTestNotification();
+                } else {
+                  Alert.alert(
+                    'Notifications Disabled',
+                    'Please enable notifications in your device settings to receive alerts.',
+                    [{ text: 'OK' }]
+                  );
+                }
+              }}
+            />
+          )}
 
           <SettingItem
             icon="sync"

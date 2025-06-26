@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 import { Counter, Session, Settings, User, AppState, TasbeehContextType, COLORS } from '../types';
 import storage from '../utils/storage';
 import { auth, database } from '../utils/supabase';
+import { notifications } from '../utils/notifications';
 
 // Default values
 const DEFAULT_SETTINGS: Settings = {
@@ -243,6 +244,8 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
     const counter = state.counters.find(c => c.id === id);
     if (!counter) return;
 
+    const newCount = counter.count + 1;
+
     // Haptic feedback
     if (state.settings.hapticFeedback && Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -254,20 +257,31 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
     }
 
     // Increment counter
-    dispatch({ type: 'UPDATE_COUNTER', payload: { id, updates: { count: counter.count + 1 } } });
+    dispatch({ type: 'UPDATE_COUNTER', payload: { id, updates: { count: newCount } } });
     
     // Update active session
     if (state.activeSession && state.activeSession.counterId === id) {
       const updatedSession: Partial<Session> = {
-        endCount: counter.count + 1,
-        totalCounts: (counter.count + 1) - state.activeSession.startCount,
+        endCount: newCount,
+        totalCounts: newCount - state.activeSession.startCount,
         duration: Math.floor((Date.now() - new Date(state.activeSession.startTime).getTime()) / 1000),
       };
       dispatch({ type: 'UPDATE_SESSION', payload: { id: state.activeSession.id, updates: updatedSession } });
     }
 
+    // Check for achievements and notifications
+    if (state.settings.notifications) {
+      // Check if target reached
+      if (counter.target && newCount >= counter.target && counter.count < counter.target) {
+        await notifications.showAchievementNotification(counter.name, counter.target, newCount);
+      }
+
+      // Check for milestones
+      await notifications.showMilestoneNotification(counter.name, newCount);
+    }
+
     debouncedSave();
-  }, [state.counters, state.settings.hapticFeedback, state.activeSession, debouncedSave]);
+  }, [state.counters, state.settings.hapticFeedback, state.settings.notifications, state.activeSession, debouncedSave]);
 
   const resetCounter = useCallback(async (id: string) => {
     // End active session if exists
@@ -483,6 +497,15 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: 'SET_LOADING', payload: true });
       dispatch({ type: 'SET_ERROR', payload: null });
 
+      // Check current authentication status
+      const { data: { session }, error: sessionError } = await auth.getSession();
+      
+      if (sessionError || !session) {
+        dispatch({ type: 'SET_ERROR', payload: 'Authentication expired. Please sign in again.' });
+        dispatch({ type: 'SET_USER', payload: null });
+        return;
+      }
+
       // First, upload local data to cloud
       const [countersResult, sessionsResult] = await Promise.all([
         database.syncCounters(state.counters, state.user.id),
@@ -491,13 +514,27 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
 
       if (countersResult.error) {
         console.error('Error syncing counters:', countersResult.error);
-        dispatch({ type: 'SET_ERROR', payload: 'Failed to sync counters' });
+        const errorMessage = countersResult.error.message?.includes('not authenticated') 
+          ? 'Authentication expired. Please sign in again.'
+          : 'Failed to sync counters. Please try again.';
+        dispatch({ type: 'SET_ERROR', payload: errorMessage });
+        
+        if (countersResult.error.message?.includes('not authenticated')) {
+          dispatch({ type: 'SET_USER', payload: null });
+        }
         return;
       }
 
       if (sessionsResult.error) {
         console.error('Error syncing sessions:', sessionsResult.error);
-        dispatch({ type: 'SET_ERROR', payload: 'Failed to sync sessions' });
+        const errorMessage = sessionsResult.error.message?.includes('not authenticated')
+          ? 'Authentication expired. Please sign in again.'
+          : 'Failed to sync sessions. Please try again.';
+        dispatch({ type: 'SET_ERROR', payload: errorMessage });
+        
+        if (sessionsResult.error.message?.includes('not authenticated')) {
+          dispatch({ type: 'SET_USER', payload: null });
+        }
         return;
       }
 

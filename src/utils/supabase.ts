@@ -1,13 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
-import * as SecureStore from 'expo-secure-store';
 
 // Supabase configuration
 const supabaseUrl = 'https://immoihaxapjuwboinwiy.supabase.co'; // Replace with your Supabase URL
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImltbW9paGF4YXBqdXdib2lud2l5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTA5MjIxMDcsImV4cCI6MjA2NjQ5ODEwN30.xINbvLTVELjzA7lZdq87vouxb0VJ4nFtw3RTpJAn_ps'; // Replace with your Supabase anon key
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 // Custom storage implementation for different platforms
-const ExpoSecureStoreAdapter = {
+const ExpoStorageAdapter = {
   getItem: (key: string) => {
     if (Platform.OS === 'web') {
       // Use localStorage for web
@@ -16,8 +17,8 @@ const ExpoSecureStoreAdapter = {
       }
       return null;
     } else {
-      // Use SecureStore for mobile
-      return SecureStore.getItemAsync(key);
+      // Use AsyncStorage for mobile (SecureStore has size limits)
+      return AsyncStorage.getItem(key);
     }
   },
   setItem: (key: string, value: string) => {
@@ -27,8 +28,8 @@ const ExpoSecureStoreAdapter = {
         localStorage.setItem(key, value);
       }
     } else {
-      // Use SecureStore for mobile
-      SecureStore.setItemAsync(key, value);
+      // Use AsyncStorage for mobile (SecureStore has size limits)
+      AsyncStorage.setItem(key, value);
     }
   },
   removeItem: (key: string) => {
@@ -38,8 +39,8 @@ const ExpoSecureStoreAdapter = {
         localStorage.removeItem(key);
       }
     } else {
-      // Use SecureStore for mobile
-      SecureStore.deleteItemAsync(key);
+      // Use AsyncStorage for mobile (SecureStore has size limits)
+      AsyncStorage.removeItem(key);
     }
   },
 };
@@ -47,7 +48,7 @@ const ExpoSecureStoreAdapter = {
 // Create Supabase client
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: ExpoSecureStoreAdapter,
+    storage: ExpoStorageAdapter,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
@@ -152,6 +153,13 @@ export const database = {
   // Sync counters to Supabase
   syncCounters: async (counters: any[], userId: string) => {
     try {
+      // Check if user is authenticated
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        return { data: null, error: { message: 'User not authenticated' } };
+      }
+
       const transformedCounters = counters.map(counter => ({
         ...transformCounterToDb(counter),
         user_id: userId,
@@ -171,6 +179,13 @@ export const database = {
   // Get counters from Supabase
   getCounters: async (userId: string) => {
     try {
+      // Check if user is authenticated
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        return { data: null, error: { message: 'User not authenticated' } };
+      }
+
       const { data, error } = await supabase
         .from('counters')
         .select('*')
@@ -187,6 +202,13 @@ export const database = {
   // Sync sessions to Supabase
   syncSessions: async (sessions: any[], userId: string) => {
     try {
+      // Check if user is authenticated
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        return { data: null, error: { message: 'User not authenticated' } };
+      }
+
       const transformedSessions = sessions.map(session => ({
         ...transformSessionToDb(session),
         user_id: userId,
@@ -206,6 +228,13 @@ export const database = {
   // Get sessions from Supabase
   getSessions: async (userId: string) => {
     try {
+      // Check if user is authenticated
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        return { data: null, error: { message: 'User not authenticated' } };
+      }
+
       const { data, error } = await supabase
         .from('sessions')
         .select('*')
