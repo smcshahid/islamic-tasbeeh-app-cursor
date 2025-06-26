@@ -69,9 +69,11 @@ export interface TasbeehContextType extends AppState {
   loadFromStorage: () => Promise<void>;
   
   // Cloud sync actions
+  loadFromCloud: () => Promise<void>;
   syncWithCloud: () => Promise<void>;
   
   // Auth actions
+  signUp: (email: string, password: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   signInAsGuest: () => Promise<void>;

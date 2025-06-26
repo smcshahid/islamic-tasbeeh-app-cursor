@@ -358,10 +358,8 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
         
         dispatch({ type: 'SET_USER', payload: newUser });
         
-        // Auto-sync data after sign in
-        if (state.settings.autoSync) {
-          await syncWithCloud();
-        }
+        // Auto-load cloud data after sign in
+        await loadFromCloud();
         
         debouncedSave();
       }
@@ -371,7 +369,38 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
-  }, [state.settings.autoSync, debouncedSave]);
+  }, [loadFromCloud, debouncedSave]);
+
+  const signUp = useCallback(async (email: string, password: string) => {
+    try {
+      dispatch({ type: 'SET_LOADING', payload: true });
+      dispatch({ type: 'SET_ERROR', payload: null });
+
+      const { data, error } = await auth.signUp(email, password);
+      
+      if (error) {
+        dispatch({ type: 'SET_ERROR', payload: error.message });
+        return;
+      }
+
+      if (data.user) {
+        const newUser: User = {
+          id: data.user.id,
+          email: data.user.email || undefined,
+          isGuest: false,
+          lastSyncAt: new Date().toISOString(),
+        };
+        
+        dispatch({ type: 'SET_USER', payload: newUser });
+        debouncedSave();
+      }
+    } catch (error) {
+      console.error('Sign up error:', error);
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to sign up' });
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  }, [debouncedSave]);
 
   const signOut = useCallback(async () => {
     try {
@@ -402,6 +431,47 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
     debouncedSave();
   }, [debouncedSave]);
 
+  // Load data from cloud
+  const loadFromCloud = useCallback(async () => {
+    if (!state.user || state.user.isGuest) {
+      dispatch({ type: 'SET_ERROR', payload: 'Please sign in to load cloud data' });
+      return;
+    }
+
+    try {
+      dispatch({ type: 'SET_LOADING', payload: true });
+      dispatch({ type: 'SET_ERROR', payload: null });
+
+      const [countersResult, sessionsResult] = await Promise.all([
+        database.getCounters(state.user.id),
+        database.getSessions(state.user.id),
+      ]);
+
+      if (countersResult.data && countersResult.data.length > 0) {
+        dispatch({ type: 'SET_COUNTERS', payload: countersResult.data });
+        dispatch({ type: 'SET_CURRENT_COUNTER', payload: countersResult.data[0] });
+      }
+
+      if (sessionsResult.data && sessionsResult.data.length > 0) {
+        dispatch({ type: 'SET_SESSIONS', payload: sessionsResult.data });
+      }
+
+      // Update last sync time
+      const updatedUser: User = {
+        ...state.user,
+        lastSyncAt: new Date().toISOString(),
+      };
+      dispatch({ type: 'SET_USER', payload: updatedUser });
+      
+      debouncedSave();
+    } catch (error) {
+      console.error('Load from cloud error:', error);
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to load data from cloud' });
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  }, [state.user, debouncedSave]);
+
   // Cloud sync implementation
   const syncWithCloud = useCallback(async () => {
     if (!state.user || state.user.isGuest) {
@@ -413,7 +483,7 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: 'SET_LOADING', payload: true });
       dispatch({ type: 'SET_ERROR', payload: null });
 
-      // Sync counters and sessions
+      // First, upload local data to cloud
       const [countersResult, sessionsResult] = await Promise.all([
         database.syncCounters(state.counters, state.user.id),
         database.syncSessions(state.sessions.filter(s => s.endTime), state.user.id), // Only sync completed sessions
@@ -421,30 +491,29 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
 
       if (countersResult.error) {
         console.error('Error syncing counters:', countersResult.error);
+        dispatch({ type: 'SET_ERROR', payload: 'Failed to sync counters' });
+        return;
       }
 
       if (sessionsResult.error) {
         console.error('Error syncing sessions:', sessionsResult.error);
+        dispatch({ type: 'SET_ERROR', payload: 'Failed to sync sessions' });
+        return;
       }
 
-      // Update last sync time
-      const updatedUser: User = {
-        ...state.user,
-        lastSyncAt: new Date().toISOString(),
-      };
-      dispatch({ type: 'SET_USER', payload: updatedUser });
+      // Then, load updated data from cloud
+      await loadFromCloud();
       
       // Show success message
       dispatch({ type: 'SET_ERROR', payload: null });
       
-      debouncedSave();
     } catch (error) {
       console.error('Sync error:', error);
       dispatch({ type: 'SET_ERROR', payload: 'Failed to sync with cloud' });
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
-  }, [state.user, state.counters, state.sessions, debouncedSave]);
+  }, [state.user, state.counters, state.sessions, loadFromCloud]);
 
   // Listen to auth changes
   useEffect(() => {
@@ -457,6 +526,27 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
           lastSyncAt: new Date().toISOString(),
         };
         dispatch({ type: 'SET_USER', payload: newUser });
+        
+        // Load cloud data after authentication
+        if (state.hasLoadedFromStorage) {
+          try {
+            const [countersResult, sessionsResult] = await Promise.all([
+              database.getCounters(session.user.id),
+              database.getSessions(session.user.id),
+            ]);
+
+            if (countersResult.data && countersResult.data.length > 0) {
+              dispatch({ type: 'SET_COUNTERS', payload: countersResult.data });
+              dispatch({ type: 'SET_CURRENT_COUNTER', payload: countersResult.data[0] });
+            }
+
+            if (sessionsResult.data && sessionsResult.data.length > 0) {
+              dispatch({ type: 'SET_SESSIONS', payload: sessionsResult.data });
+            }
+          } catch (error) {
+            console.error('Error loading cloud data on auth change:', error);
+          }
+        }
       } else if (event === 'SIGNED_OUT') {
         dispatch({ type: 'SET_USER', payload: null });
       }
@@ -465,7 +555,7 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
     return () => {
       authListener?.subscription?.unsubscribe();
     };
-  }, []);
+  }, [state.hasLoadedFromStorage]);
 
   // Load data on mount
   useEffect(() => {
@@ -492,7 +582,9 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
     updateSettings,
     saveToStorage,
     loadFromStorage,
+    loadFromCloud,
     syncWithCloud,
+    signUp,
     signIn,
     signOut,
     signInAsGuest,

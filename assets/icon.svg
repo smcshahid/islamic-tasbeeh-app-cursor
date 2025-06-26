@@ -1,0 +1,43 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="256" fill="url(#gradient)" />
+  
+  <!-- Gradient definition -->
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#22C55E;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#16A34A;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Prayer beads in a circle -->
+  <g transform="translate(256,256)">
+    <!-- Main circle of beads -->
+    <circle cx="0" cy="-80" r="12" fill="white" opacity="0.9"/>
+    <circle cx="28.28" cy="-75.36" r="12" fill="white" opacity="0.8"/>
+    <circle cx="56.56" cy="-60.62" r="12" fill="white" opacity="0.7"/>
+    <circle cx="75.36" cy="-28.28" r="12" fill="white" opacity="0.8"/>
+    <circle cx="80" cy="0" r="12" fill="white" opacity="0.9"/>
+    <circle cx="75.36" cy="28.28" r="12" fill="white" opacity="0.8"/>
+    <circle cx="56.56" cy="60.62" r="12" fill="white" opacity="0.7"/>
+    <circle cx="28.28" cy="75.36" r="12" fill="white" opacity="0.8"/>
+    <circle cx="0" cy="80" r="12" fill="white" opacity="0.9"/>
+    <circle cx="-28.28" cy="75.36" r="12" fill="white" opacity="0.8"/>
+    <circle cx="-56.56" cy="60.62" r="12" fill="white" opacity="0.7"/>
+    <circle cx="-75.36" cy="28.28" r="12" fill="white" opacity="0.8"/>
+    <circle cx="-80" cy="0" r="12" fill="white" opacity="0.9"/>
+    <circle cx="-75.36" cy="-28.28" r="12" fill="white" opacity="0.8"/>
+    <circle cx="-56.56" cy="-60.62" r="12" fill="white" opacity="0.7"/>
+    <circle cx="-28.28" cy="-75.36" r="12" fill="white" opacity="0.8"/>
+  </g>
+  
+  <!-- Center counter display -->
+  <circle cx="256" cy="256" r="50" fill="white" opacity="0.15"/>
+  <circle cx="256" cy="256" r="35" fill="white" opacity="0.3"/>
+  
+  <!-- Islamic crescent and star -->
+  <g transform="translate(256,246)">
+    <path d="M -8 -8 A 8 8 0 1 1 -8 8 A 6 6 0 1 0 -8 -8 Z" fill="white" opacity="0.8"/>
+    <polygon points="2,-8 4,-4 8,-4 5,-1 6,3 2,0 -2,3 -1,-1 -4,-4 0,-4" fill="white" opacity="0.8"/>
+  </g>
+</svg> 
