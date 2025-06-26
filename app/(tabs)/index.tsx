@@ -358,91 +358,166 @@ export default function CounterScreen() {
         animationType="slide"
         presentationStyle="pageSheet"
       >
-        <SafeAreaView style={[styles.modalContainer, { backgroundColor: isDark ? COLORS.neutral.gray900 : COLORS.neutral.white }]}>
-          <View style={styles.modalHeader}>
-            <Text style={[styles.modalTitle, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}>
-              Set Target
-            </Text>
-            <TouchableOpacity onPress={() => setShowTargetModal(false)}>
-              <Ionicons name="close" size={24} color={isDark ? COLORS.neutral.white : COLORS.neutral.gray900} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.targetModalContent}>
-            <Text style={[styles.targetSubtitle, { color: isDark ? COLORS.neutral.gray300 : COLORS.neutral.gray600 }]}>
-              Choose your target count for {currentCounter?.name}
-            </Text>
-
-            {/* Preset Target Buttons */}
-            <View style={styles.presetTargetsContainer}>
-              {[33, 99, 100, 300, 500, 1000].map((preset) => (
-                <TouchableOpacity
-                  key={preset}
-                  style={[
-                    styles.presetTargetButton,
-                    { backgroundColor: COLORS.primary.teal },
-                    parseInt(targetValue) === preset && { 
-                      backgroundColor: currentCounter?.color || COLORS.primary.green,
-                      transform: [{ scale: 1.05 }]
-                    }
-                  ]}
-                  onPress={() => setTargetValue(preset.toString())}
+        <LinearGradient
+          colors={isDark 
+            ? ['#1f2937', '#111827', '#0f172a'] 
+            : ['#f8fafc', '#f1f5f9', '#e2e8f0']
+          }
+          style={styles.targetModalGradient}
+        >
+          <SafeAreaView style={styles.targetModalContainer}>
+            {/* Header */}
+            <View style={styles.targetModalHeader}>
+              <View style={styles.targetModalHeaderContent}>
+                <Text style={[styles.targetModalTitle, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}>
+                  Set Target
+                </Text>
+                <TouchableOpacity 
+                  style={[styles.closeButton, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }]}
+                  onPress={() => setShowTargetModal(false)}
                 >
-                  <Text style={styles.presetTargetText}>{preset}</Text>
+                  <Ionicons name="close" size={20} color={isDark ? COLORS.neutral.white : COLORS.neutral.gray900} />
                 </TouchableOpacity>
-              ))}
+              </View>
+              <Text style={[styles.targetModalSubtitle, { color: isDark ? COLORS.neutral.gray300 : COLORS.neutral.gray600 }]}>
+                Choose your target count for {currentCounter?.name}
+              </Text>
             </View>
 
-            {/* Manual Input */}
-            <Text style={[styles.inputLabel, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}>
-              Or enter custom target:
-            </Text>
-            <TextInput
-              style={[
-                styles.textInput,
-                {
-                  backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.gray100,
-                  color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900,
-                }
-              ]}
-              value={targetValue}
-              onChangeText={setTargetValue}
-              placeholder="Enter target count"
-              placeholderTextColor={isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray500}
-              keyboardType="numeric"
-            />
+            <ScrollView style={styles.targetModalContent} showsVerticalScrollIndicator={false}>
+              {/* Counter Info Card */}
+              <View style={[styles.counterInfoCard, { 
+                backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.8)',
+                borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
+              }]}>
+                <View style={[styles.counterColorIndicator, { backgroundColor: currentCounter?.color }]} />
+                <View style={styles.counterInfoText}>
+                  <Text style={[styles.counterInfoName, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}>
+                    {currentCounter?.name}
+                  </Text>
+                  <Text style={[styles.counterInfoCount, { color: isDark ? COLORS.neutral.gray300 : COLORS.neutral.gray600 }]}>
+                    Current: {currentCounter?.count.toLocaleString()}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Preset Targets Section */}
+              <View style={styles.presetSection}>
+                <Text style={[styles.sectionTitle, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}>
+                  Popular Targets
+                </Text>
+                <View style={styles.presetTargetsGrid}>
+                  {[33, 99, 100, 300, 500, 1000].map((preset) => (
+                    <TouchableOpacity
+                      key={preset}
+                      style={[
+                        styles.presetTargetCard,
+                        { 
+                          backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : COLORS.neutral.white,
+                          borderColor: parseInt(targetValue) === preset 
+                            ? currentCounter?.color 
+                            : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)')
+                        },
+                        parseInt(targetValue) === preset && {
+                          backgroundColor: currentCounter?.color + '20',
+                          borderWidth: 2,
+                          transform: [{ scale: 1.02 }]
+                        }
+                      ]}
+                      onPress={() => setTargetValue(preset.toString())}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[
+                        styles.presetTargetNumber,
+                        { 
+                          color: parseInt(targetValue) === preset 
+                            ? currentCounter?.color 
+                            : (isDark ? COLORS.neutral.white : COLORS.neutral.gray900)
+                        }
+                      ]}>
+                        {preset}
+                      </Text>
+                      <Text style={[styles.presetTargetLabel, { color: isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray600 }]}>
+                        {preset === 33 ? 'Tasbih' : preset === 99 ? 'Asma ul Husna' : 'Target'}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {/* Custom Target Section */}
+              <View style={styles.customSection}>
+                <Text style={[styles.sectionTitle, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}>
+                  Custom Target
+                </Text>
+                <View style={[styles.customInputCard, { 
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : COLORS.neutral.white,
+                  borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
+                }]}>
+                  <TextInput
+                    style={[
+                      styles.customTargetInput,
+                      {
+                        color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900,
+                      }
+                    ]}
+                    value={targetValue}
+                    onChangeText={setTargetValue}
+                    placeholder="Enter any number"
+                    placeholderTextColor={isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray500}
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
+            </ScrollView>
 
             {/* Action Buttons */}
-            <View style={styles.targetActionButtons}>
+            <View style={[styles.targetActionButtonsContainer, { 
+              backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.8)',
+              borderTopColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
+            }]}>
               <TouchableOpacity
-                style={[styles.targetActionButton, styles.cancelButton]}
+                style={[styles.actionBtn, styles.cancelBtn, { 
+                  backgroundColor: 'transparent',
+                  borderColor: isDark ? COLORS.neutral.gray600 : COLORS.neutral.gray300
+                }]}
                 onPress={() => setShowTargetModal(false)}
+                activeOpacity={0.7}
               >
-                <Text style={[styles.targetActionButtonText, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}>
+                <Text style={[styles.actionBtnText, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray700 }]}>
                   Cancel
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.targetActionButton, { backgroundColor: COLORS.primary.orange }]}
+                style={[styles.actionBtn, styles.removeBtn]}
                 onPress={() => {
                   setTargetValue('');
                   handleSaveTarget();
                 }}
+                activeOpacity={0.7}
               >
-                <Text style={styles.targetActionButtonText}>Remove Target</Text>
+                <Ionicons name="trash-outline" size={18} color={COLORS.neutral.white} />
+                <Text style={styles.actionBtnText}>Remove</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.targetActionButton, { backgroundColor: currentCounter?.color || COLORS.primary.green }]}
+                style={[
+                  styles.actionBtn, 
+                  styles.setBtn, 
+                  { backgroundColor: currentCounter?.color || COLORS.primary.green },
+                  !targetValue.trim() && { opacity: 0.5 }
+                ]}
                 onPress={handleSaveTarget}
                 disabled={!targetValue.trim()}
+                activeOpacity={0.8}
               >
-                <Text style={styles.targetActionButtonText}>Set Target</Text>
+                <Ionicons name="checkmark" size={18} color={COLORS.neutral.white} />
+                <Text style={styles.actionBtnText}>Set Target</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </SafeAreaView>
+          </SafeAreaView>
+        </LinearGradient>
       </Modal>
     </SafeAreaView>
   );
@@ -655,63 +730,160 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   // Target Modal Styles
+  targetModalGradient: {
+    flex: 1,
+  },
+  targetModalContainer: {
+    flex: 1,
+  },
+  targetModalHeader: {
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  targetModalHeaderContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  targetModalTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+  },
+  targetModalSubtitle: {
+    fontSize: 16,
+    opacity: 0.8,
+  },
+  closeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   targetModalContent: {
     flex: 1,
-    padding: 20,
+    paddingHorizontal: 24,
+    paddingTop: 24,
   },
-  targetSubtitle: {
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  presetTargetsContainer: {
+  counterInfoCard: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 12,
-    marginBottom: 32,
-  },
-  presetTargetButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 20,
-    minWidth: 70,
     alignItems: 'center',
+    padding: 20,
+    borderRadius: 16,
+    marginBottom: 32,
+    borderWidth: 1,
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
   },
-  presetTargetText: {
-    color: COLORS.neutral.white,
-    fontSize: 16,
+  counterColorIndicator: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 16,
+  },
+  counterInfoText: {
+    flex: 1,
+  },
+  counterInfoName: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  counterInfoCount: {
+    fontSize: 14,
+  },
+  presetSection: {
+    marginBottom: 32,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 16,
+  },
+  presetTargetsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  presetTargetCard: {
+    flex: 1,
+    minWidth: '30%',
+    maxWidth: '32%',
+    padding: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  presetTargetNumber: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  presetTargetLabel: {
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  customSection: {
+    marginBottom: 32,
+  },
+  customInputCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  customTargetInput: {
+    padding: 20,
+    fontSize: 18,
+    textAlign: 'center',
     fontWeight: '600',
   },
-  targetActionButtons: {
+  targetActionButtonsContainer: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 24,
+    padding: 24,
+    borderTopWidth: 1,
   },
-  targetActionButton: {
+  actionBtn: {
     flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
+    flexDirection: 'row',
     alignItems: 'center',
-    elevation: 1,
+    justifyContent: 'center',
+    paddingVertical: 16,
+    borderRadius: 16,
+    elevation: 2,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowRadius: 4,
   },
-  cancelButton: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: COLORS.neutral.gray300,
+  cancelBtn: {
+    borderWidth: 1.5,
   },
-  targetActionButtonText: {
+  removeBtn: {
+    backgroundColor: COLORS.primary.orange,
+  },
+  setBtn: {
+    // backgroundColor set dynamically
+  },
+  actionBtnText: {
     color: COLORS.neutral.white,
     fontSize: 16,
     fontWeight: '600',
+    marginLeft: 6,
   },
 }); 
