@@ -75,6 +75,13 @@ export const APP_CONSTANTS = {
     HEADER_HEIGHT: 56,
   } as const,
 
+  // Timer Configuration
+  TIMERS: {
+    SESSION_UPDATE_INTERVAL: 1000, // 1 second for session timer updates
+    AUTO_SAVE_INTERVAL: 30000, // 30 seconds for auto-save
+    ACHIEVEMENT_CHECK_INTERVAL: 2000, // 2 seconds for achievement checks
+  } as const,
+
   // Achievement Configuration
   ACHIEVEMENTS: {
     TASBIH_COUNT: 33,
@@ -123,6 +130,14 @@ export const APP_CONSTANTS = {
       MONTHLY_GOAL: 5000,
       YEARLY_GOAL: 50000,
     },
+    // Individual milestone constants for easy access
+    TASBIH_COUNT: 33,
+    ASMA_UL_HUSNA: 99, // Fixed to match usage in CounterScreen
+    ASMA_UL_HUSNA_COUNT: 99, // Keep both for compatibility
+    MILESTONE_100: 100,
+    MILESTONE_300: 300,
+    MILESTONE_500: 500,
+    MILESTONE_1000: 1000,
   } as const,
 
   // Date and Time

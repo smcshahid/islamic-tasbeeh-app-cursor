@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useCallback, useMemo, useState } from 'react';
 import { Platform } from 'react-native';
 import { Counter, Session, Settings, User, AppState, TasbeehContextType, COLORS } from '../types';
 import storage from '../utils/storage';
@@ -56,8 +56,8 @@ type Action =
   | { type: 'ADD_SESSION'; payload: Session }
   | { type: 'UPDATE_SESSION'; payload: { id: string; updates: Partial<Session> } };
 
-// Memoized reducer to prevent unnecessary re-renders
-const tasbeehReducer = React.memo((state: AppState, action: Action): AppState => {
+// Reducer function to handle state updates
+const tasbeehReducer = (state: AppState, action: Action): AppState => {
   switch (action.type) {
     case 'SET_LOADING':
       return { ...state, isLoading: action.payload };
@@ -134,7 +134,7 @@ const tasbeehReducer = React.memo((state: AppState, action: Action): AppState =>
     default:
       return state;
   }
-});
+};
 
 // Context
 const TasbeehContext = createContext<TasbeehContextType | null>(null);
@@ -161,11 +161,23 @@ export const TasbeehProvider = React.memo(({ children }: { children: React.React
       clearTimeout(timeoutId);
       timeoutId = setTimeout(async () => {
         if (state.hasLoadedFromStorage) {
-          await saveToStorage();
+          try {
+            await Promise.all([
+              storage.saveCounters(state.counters),
+              storage.saveSessions(state.sessions),
+              storage.saveSettings(state.settings),
+              storage.saveUser(state.user),
+              storage.saveActiveSession(state.activeSession),
+              storage.saveCurrentCounter(state.currentCounter),
+            ]);
+          } catch (error) {
+            secureLogger.error('Error saving to storage', error, 'TasbeehContext');
+            dispatch({ type: 'SET_ERROR', payload: 'Failed to save data' });
+          }
         }
-      }, APP_CONSTANTS.PERFORMANCE.DEBOUNCE_DELAY);
+      }, APP_CONSTANTS.PERFORMANCE.DEBOUNCE_DELAYS.SAVE_STORAGE);
     };
-  }, [state.hasLoadedFromStorage]);
+  }, []); // Empty dependency array to prevent infinite recreations
 
   // Load data from storage on app start
   const loadFromStorage = useCallback(async () => {
@@ -293,7 +305,7 @@ export const TasbeehProvider = React.memo(({ children }: { children: React.React
         // Check if we need to recalculate achievements
         const now = Date.now();
         const timeSinceLastCheck = now - lastAchievementCheck;
-        const shouldCheck = timeSinceLastCheck > APP_CONSTANTS.PERFORMANCE.ACHIEVEMENT_CACHE_TTL;
+        const shouldCheck = timeSinceLastCheck > APP_CONSTANTS.PERFORMANCE.CACHE_DURATION.ACHIEVEMENTS;
         
         if (!shouldCheck && achievementCache.has(cacheKey)) {
           // Use cached result
@@ -608,7 +620,7 @@ export const TasbeehProvider = React.memo(({ children }: { children: React.React
         dispatch({ type: 'SET_ERROR', payload: successMessage });
         setTimeout(() => {
           dispatch({ type: 'SET_ERROR', payload: null });
-        }, APP_CONSTANTS.UI.MESSAGE_TIMEOUT_LONG);
+        }, 5000); // 5 seconds for account creation message
       } else {
         secureLogger.error('Sign up completed but no user data returned', response, 'TasbeehContext');
         dispatch({ type: 'SET_ERROR', payload: 'Account creation completed but verification needed. Please try signing in.' });

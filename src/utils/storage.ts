@@ -64,7 +64,7 @@ export const storage = {
   async saveSessions(sessions: Session[]): Promise<void> {
     try {
           // Keep only the last sessions to manage storage
-    const limitedSessions = sessions.slice(-APP_CONSTANTS.STORAGE.MAX_SESSIONS);
+    const limitedSessions = sessions.slice(-APP_CONSTANTS.LIMITS.MAX_SESSIONS_STORED);
       await AsyncStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify(limitedSessions));
     } catch (error) {
       secureLogger.error('Error saving sessions', error, 'Storage');

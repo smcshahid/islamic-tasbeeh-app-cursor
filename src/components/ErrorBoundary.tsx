@@ -223,6 +223,25 @@ export class HistoryErrorBoundary extends Component<ErrorBoundaryProps, ErrorBou
   }
 }
 
+export class SettingsErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  render() {
+    return (
+      <ErrorBoundary
+        {...this.props}
+        fallback={
+          <View style={styles.smallErrorContainer}>
+            <Ionicons name="settings" size={32} color={COLORS.semantic.error} />
+            <Text style={styles.smallErrorText}>Settings Error</Text>
+            <TouchableOpacity style={styles.smallRetryButton} onPress={() => window.location.reload()}>
+              <Text style={styles.smallRetryText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        }
+      />
+    );
+  }
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
