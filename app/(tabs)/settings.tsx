@@ -18,6 +18,14 @@ import { useAppTheme } from '../../src/utils/theme';
 import { notifications } from '../../src/utils/notifications';
 import storage from '../../src/utils/storage';
 import { COLORS, Counter, ColorKey } from '../../src/types';
+import { SettingsErrorBoundary } from '../../src/components/ErrorBoundary';
+import { 
+  getButtonA11yProps, 
+  getToggleA11yProps,
+  announceToScreenReader,
+  getAccessibleColors,
+  getFontScale
+} from '../../src/utils/accessibility';
 
 export default function SettingsScreen() {
   const { isDark } = useAppTheme();
@@ -45,6 +53,10 @@ export default function SettingsScreen() {
   const [editCounterColor, setEditCounterColor] = useState(COLORS.primary.blue);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  
+  // Accessibility configuration
+  const fontScale = getFontScale();
+  const accessibleColors = getAccessibleColors(isDark ? 'dark' : 'light');
 
   const handleEditCounter = (counter: Counter) => {
     setEditingCounter(counter);
@@ -288,28 +300,44 @@ export default function SettingsScreen() {
     <TouchableOpacity 
       style={[
         styles.settingItem,
-        { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.white }
+        { backgroundColor: accessibleColors.surface }
       ]}
       onPress={onPress}
       disabled={!onPress}
+      {...getButtonA11yProps(
+        title,
+        subtitle ? `${title}. ${subtitle}` : title,
+        !onPress
+      )}
+      accessibilityHint={
+        rightComponent ? `${title}. ${subtitle || ''}` : 
+        onPress ? `${title}. ${subtitle || ''}. Tap to ${title.toLowerCase()}.` : undefined
+      }
     >
       <View style={styles.settingLeft}>
         <Ionicons 
           name={icon as any} 
           size={24} 
-          color={isDark ? COLORS.neutral.white : COLORS.neutral.gray900} 
+          color={accessibleColors.primaryText}
+          accessibilityElementsHidden={true}
         />
         <View style={styles.settingText}>
           <Text style={[
             styles.settingTitle,
-            { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }
+            { 
+              color: accessibleColors.primaryText,
+              fontSize: 16 * fontScale
+            }
           ]}>
             {title}
           </Text>
           {subtitle && (
             <Text style={[
               styles.settingSubtitle,
-              { color: isDark ? COLORS.neutral.gray300 : COLORS.neutral.gray600 }
+              { 
+                color: accessibleColors.secondaryText,
+                fontSize: 14 * fontScale
+              }
             ]}>
               {subtitle}
             </Text>
@@ -320,7 +348,8 @@ export default function SettingsScreen() {
         <Ionicons 
           name="chevron-forward" 
           size={20} 
-          color={isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray500} 
+          color={accessibleColors.secondaryText}
+          accessibilityElementsHidden={true}
         />
       ))}
     </TouchableOpacity>
@@ -333,13 +362,21 @@ export default function SettingsScreen() {
       styles.container,
       { backgroundColor: isDark ? COLORS.neutral.gray900 : COLORS.neutral.gray50 }
     ]}>
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <SettingsErrorBoundary>
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={[
-            styles.headerTitle,
-            { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }
-          ]}>
+          <Text 
+            style={[
+              styles.headerTitle,
+              { 
+                color: accessibleColors.primaryText,
+                fontSize: 28 * fontScale
+              }
+            ]}
+            accessibilityRole="header"
+            accessibilityLabel="Settings screen"
+          >
             Settings
           </Text>
         </View>
@@ -418,9 +455,19 @@ export default function SettingsScreen() {
             rightComponent={
               <Switch
                 value={settings.hapticFeedback}
-                onValueChange={(value) => updateSettings({ hapticFeedback: value })}
+                onValueChange={(value) => {
+                  updateSettings({ hapticFeedback: value });
+                  announceToScreenReader(
+                    `Haptic feedback ${value ? 'enabled' : 'disabled'}`
+                  );
+                }}
                 trackColor={{ false: COLORS.neutral.gray300, true: COLORS.primary.green }}
                 thumbColor={settings.hapticFeedback ? COLORS.neutral.white : COLORS.neutral.gray500}
+                {...getToggleA11yProps(
+                  'Haptic Feedback',
+                  settings.hapticFeedback,
+                  'Toggle vibration when counting dhikr'
+                )}
               />
             }
           />
@@ -432,9 +479,19 @@ export default function SettingsScreen() {
             rightComponent={
               <Switch
                 value={settings.notifications}
-                onValueChange={(value) => updateSettings({ notifications: value })}
+                onValueChange={(value) => {
+                  updateSettings({ notifications: value });
+                  announceToScreenReader(
+                    `Notifications ${value ? 'enabled' : 'disabled'}`
+                  );
+                }}
                 trackColor={{ false: COLORS.neutral.gray300, true: COLORS.primary.green }}
                 thumbColor={settings.notifications ? COLORS.neutral.white : COLORS.neutral.gray500}
+                {...getToggleA11yProps(
+                  'Notifications',
+                  settings.notifications,
+                  'Toggle achievement and milestone notifications'
+                )}
               />
             }
           />
@@ -466,9 +523,19 @@ export default function SettingsScreen() {
             rightComponent={
               <Switch
                 value={settings.autoSync}
-                onValueChange={(value) => updateSettings({ autoSync: value })}
+                onValueChange={(value) => {
+                  updateSettings({ autoSync: value });
+                  announceToScreenReader(
+                    `Auto sync ${value ? 'enabled' : 'disabled'}`
+                  );
+                }}
                 trackColor={{ false: COLORS.neutral.gray300, true: COLORS.primary.green }}
                 thumbColor={settings.autoSync ? COLORS.neutral.white : COLORS.neutral.gray500}
+                {...getToggleA11yProps(
+                  'Auto Sync',
+                  settings.autoSync,
+                  'Toggle automatic cloud synchronization when signed in'
+                )}
               />
             }
           />
@@ -597,6 +664,7 @@ export default function SettingsScreen() {
           </View>
         )}
       </ScrollView>
+      </SettingsErrorBoundary>
 
       {/* Edit Counter Modal */}
       <Modal

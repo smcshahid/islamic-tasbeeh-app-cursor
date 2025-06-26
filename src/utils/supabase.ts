@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { secureLogger } from './secureLogger';
+import { withRetry, getUserFriendlyErrorMessage, NetworkError } from './networkHandler';
+import { APP_CONSTANTS } from '../constants/app';
 
 // Security: Use environment variables instead of hardcoded credentials
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -148,6 +150,73 @@ const secureLog = (level: 'info' | 'warn' | 'error', message: string, data?: any
   secureLogger[level](message, data, 'Supabase');
 };
 
+// Network wrapper for Supabase operations with retry logic
+const executeWithRetry = async <T>(
+  operation: () => Promise<T>,
+  operationName: string,
+  customRetryOptions?: any
+): Promise<T> => {
+  const retryOptions = {
+    maxRetries: APP_CONSTANTS.NETWORK.RETRY.MAX_ATTEMPTS,
+    initialDelay: APP_CONSTANTS.NETWORK.RETRY.INITIAL_DELAY,
+    maxDelay: APP_CONSTANTS.NETWORK.RETRY.MAX_DELAY,
+    backoffFactor: APP_CONSTANTS.NETWORK.RETRY.BACKOFF_FACTOR,
+    retryCondition: (error: any) => {
+      // Don't retry client authentication errors (4xx) except timeouts and rate limits
+      if (error?.status) {
+        // Retry on server errors (5xx), timeouts (408), and rate limits (429)
+        return error.status >= 500 || error.status === 408 || error.status === 429;
+      }
+      
+      // Retry on network-related errors
+      if (error?.message) {
+        const retryableMessages = [
+          'network request failed',
+          'fetch failed', 
+          'connection refused',
+          'timeout',
+          'no network connection',
+          'ECONNRESET',
+          'ENOTFOUND',
+          'ECONNREFUSED'
+        ];
+        
+        return retryableMessages.some(msg => 
+          error.message.toLowerCase().includes(msg.toLowerCase())
+        );
+      }
+      
+      return false;
+    },
+    ...customRetryOptions
+  };
+
+  try {
+    return await withRetry(operation, retryOptions);
+  } catch (error: any) {
+    // Enhanced error handling for Supabase-specific errors
+    if (error?.message || error?.status) {
+      const networkError = error as NetworkError;
+      const friendlyMessage = getUserFriendlyErrorMessage(networkError);
+      
+      secureLog('error', `${operationName} failed after retries`, {
+        originalError: error.message,
+        friendlyMessage,
+        retryCount: error.retryCount || 0
+      });
+      
+      // Return Supabase-compatible error format with enhanced message
+      throw {
+        ...error,
+        message: friendlyMessage,
+        isNetworkError: true
+      };
+    }
+    
+    throw error;
+  }
+};
+
 // Legacy secure logging function for backward compatibility
 const legacySecureLog = (level: 'info' | 'warn' | 'error', message: string, data?: any) => {
   const isProduction = process.env.EXPO_PUBLIC_APP_ENV === 'production';
@@ -196,10 +265,24 @@ export const auth = {
 
       secureLog('info', 'Attempting sign up', { email: email.substring(0, 3) + '***' });
 
-      const { data, error } = await supabase.auth.signUp({
-        email: validateInput.string(email.trim(), 254),
-        password: password,
-      });
+      const { data, error } = await executeWithRetry(
+        () => supabase.auth.signUp({
+          email: validateInput.string(email.trim(), 254),
+          password: password,
+        }),
+        'Sign Up',
+        { 
+          maxRetries: 2, // Fewer retries for auth operations
+          retryCondition: (error: any) => {
+            // Only retry on network errors, not auth errors
+            return error?.message && (
+              error.message.includes('network') ||
+              error.message.includes('timeout') ||
+              error.message.includes('connection')
+            );
+          }
+        }
+      );
       
       if (error) {
         secureLog('error', 'Sign up failed', { 
@@ -271,10 +354,24 @@ export const auth = {
 
       secureLog('info', 'Attempting sign in', { email: email.substring(0, 3) + '***' });
 
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: validateInput.string(email.trim(), 254),
-        password: password,
-      });
+      const { data, error } = await executeWithRetry(
+        () => supabase.auth.signInWithPassword({
+          email: validateInput.string(email.trim(), 254),
+          password: password,
+        }),
+        'Sign In',
+        { 
+          maxRetries: 2, // Fewer retries for auth operations
+          retryCondition: (error: any) => {
+            // Only retry on network errors, not auth errors
+            return error?.message && (
+              error.message.includes('network') ||
+              error.message.includes('timeout') ||
+              error.message.includes('connection')
+            );
+          }
+        }
+      );
       
       if (error) {
         secureLog('error', 'Sign in failed', { 
@@ -345,7 +442,11 @@ export const auth = {
   // Sign out
   signOut: async () => {
     try {
-      const { error } = await supabase.auth.signOut();
+      const { error } = await executeWithRetry(
+        () => supabase.auth.signOut(),
+        'Sign Out',
+        { maxRetries: 1 } // Minimal retries for sign out
+      );
       return { error };
     } catch (error) {
       secureLog('error', 'Sign out error', error);
@@ -353,11 +454,24 @@ export const auth = {
     }
   },
 
-  // Get current session with improved error handling
+  // Get current session with improved error handling and retry logic
   getSession: async () => {
     try {
-      // Remove aggressive timeout and let Supabase handle its own timeouts
-      const { data, error } = await supabase.auth.getSession();
+      const { data, error } = await executeWithRetry(
+        () => supabase.auth.getSession(),
+        'Get Session',
+        { 
+          maxRetries: 2,
+          retryCondition: (error: any) => {
+            // Retry on network errors, but not authentication errors
+            return error?.message && (
+              error.message.includes('network') ||
+              error.message.includes('timeout') ||
+              error.message.includes('connection')
+            );
+          }
+        }
+      );
       
       if (error) {
         secureLog('error', 'Get session error', error);
@@ -374,7 +488,21 @@ export const auth = {
   // Get current user
   getUser: async () => {
     try {
-      const { data, error } = await supabase.auth.getUser();
+      const { data, error } = await executeWithRetry(
+        () => supabase.auth.getUser(),
+        'Get User',
+        { 
+          maxRetries: 2,
+          retryCondition: (error: any) => {
+            // Retry on network errors, but not authentication errors
+            return error?.message && (
+              error.message.includes('network') ||
+              error.message.includes('timeout') ||
+              error.message.includes('connection')
+            );
+          }
+        }
+      );
       return { data, error };
     } catch (error) {
       secureLog('error', 'Get user error', error);
@@ -504,9 +632,16 @@ export const database = {
         updated_at: new Date().toISOString(),
       }));
 
-      const { data, error } = await supabase
-        .from('counters')
-        .upsert(transformedCounters);
+      const result = await executeWithRetry(
+        async () => {
+          return await supabase
+            .from('counters')
+            .upsert(transformedCounters);
+        },
+        'Sync Counters'
+      );
+      
+      const { data, error } = result;
       
       // Handle specific authentication errors
       if (error) {
@@ -529,11 +664,18 @@ export const database = {
   getCounters: async (userId: string) => {
     try {
       // Trust that the caller has verified authentication - let Supabase handle auth at request level
-      const { data, error } = await supabase
-        .from('counters')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: true });
+      const result = await executeWithRetry(
+        async () => {
+          return await supabase
+            .from('counters')
+            .select('*')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: true });
+        },
+        'Get Counters'
+      );
+      
+      const { data, error } = result;
       
       // Handle specific authentication errors
       if (error) {
@@ -563,9 +705,16 @@ export const database = {
         updated_at: new Date().toISOString(),
       }));
 
-      const { data, error } = await supabase
-        .from('sessions')
-        .upsert(transformedSessions);
+      const result = await executeWithRetry(
+        async () => {
+          return await supabase
+            .from('sessions')
+            .upsert(transformedSessions);
+        },
+        'Sync Sessions'
+      );
+      
+      const { data, error } = result;
       
       // Handle specific authentication errors
       if (error) {
@@ -588,11 +737,18 @@ export const database = {
   getSessions: async (userId: string) => {
     try {
       // Trust that the caller has verified authentication - let Supabase handle auth at request level
-      const { data, error } = await supabase
-        .from('sessions')
-        .select('*')
-        .eq('user_id', userId)
-        .order('start_time', { ascending: false });
+      const result = await executeWithRetry(
+        async () => {
+          return await supabase
+            .from('sessions')
+            .select('*')
+            .eq('user_id', userId)
+            .order('start_time', { ascending: false });
+        },
+        'Get Sessions'
+      );
+      
+      const { data, error } = result;
       
       // Handle specific authentication errors
       if (error) {

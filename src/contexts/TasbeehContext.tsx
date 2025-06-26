@@ -1,12 +1,13 @@
 import React, { createContext, useContext, useReducer, useEffect, useCallback, useMemo } from 'react';
-import * as Haptics from 'expo-haptics';
 import { Platform } from 'react-native';
 import { Counter, Session, Settings, User, AppState, TasbeehContextType, COLORS } from '../types';
 import storage from '../utils/storage';
 import { auth, database } from '../utils/supabase';
 import { notifications } from '../utils/notifications';
 import { secureLogger } from '../utils/secureLogger';
-import { achievementManager, Achievement, UserStats, USER_LEVELS } from '../utils/achievements';
+import { achievementManager, Achievement, UserStats, USER_LEVELS, shouldCheckAchievements } from '../utils/achievements';
+import { playCountHaptic, setHapticsEnabled } from '../utils/haptics';
+import { APP_CONSTANTS } from '../constants/app';
 
 // Default values
 const DEFAULT_SETTINGS: Settings = {
@@ -138,9 +139,20 @@ const tasbeehReducer = React.memo((state: AppState, action: Action): AppState =>
 // Context
 const TasbeehContext = createContext<TasbeehContextType | null>(null);
 
-// Memoized provider component
+  // Memoized provider component
 export const TasbeehProvider = React.memo(({ children }: { children: React.ReactNode }) => {
   const [state, dispatch] = useReducer(tasbeehReducer, INITIAL_STATE);
+  
+  // Achievement caching for better performance  
+  const achievementCache = useMemo(() => new Map<string, any>(), []);
+  const [lastAchievementCheck, setLastAchievementCheck] = useState<number>(0);
+
+  // Initialize haptic system when settings are loaded
+  useEffect(() => {
+    if (state.hasLoadedFromStorage) {
+      setHapticsEnabled(state.settings.hapticFeedback);
+    }
+  }, [state.hasLoadedFromStorage, state.settings.hapticFeedback]);
 
   // Memoized debounced save function with better performance
   const debouncedSave = useMemo(() => {
@@ -151,7 +163,7 @@ export const TasbeehProvider = React.memo(({ children }: { children: React.React
         if (state.hasLoadedFromStorage) {
           await saveToStorage();
         }
-      }, 500);
+      }, APP_CONSTANTS.PERFORMANCE.DEBOUNCE_DELAY);
     };
   }, [state.hasLoadedFromStorage]);
 
@@ -240,16 +252,17 @@ export const TasbeehProvider = React.memo(({ children }: { children: React.React
     debouncedSave();
   }, [state.counters.length, state.activeSession, debouncedSave]);
 
-  // Optimized increment with better performance
+  // Optimized increment with performance improvements and smart achievement checking
   const incrementCounter = useCallback(async (id: string) => {
     const counter = state.counters.find(c => c.id === id);
     if (!counter) return;
 
-    const newCount = counter.count + 1;
+    const previousCount = counter.count;
+    const newCount = previousCount + 1;
 
-    // Haptic feedback - throttled to prevent excessive vibration
+    // Enhanced contextual haptic feedback
     if (state.settings.hapticFeedback && Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      await playCountHaptic(newCount, counter.target);
     }
 
     // Start session if not active
@@ -270,39 +283,74 @@ export const TasbeehProvider = React.memo(({ children }: { children: React.React
       dispatch({ type: 'UPDATE_SESSION', payload: { id: state.activeSession.id, updates: updatedSession } });
     }
 
-    // Optimized achievement notifications - only check every 10 counts to improve performance
-    if (state.settings.notifications && newCount % 10 === 0) {
-      // Calculate previous and new user stats
-      const previousStats = achievementManager.calculateUserStats(
-        state.counters.map(c => c.id === id ? { ...c, count: c.count } : c),
-        state.sessions,
-        [] // TODO: Add achievements to state
-      );
-      
-      const newStats = achievementManager.calculateUserStats(
-        state.counters.map(c => c.id === id ? { ...c, count: newCount } : c),
-        state.sessions,
-        [] // TODO: Add achievements to state
-      );
+    // PERFORMANCE OPTIMIZATION: Smart achievement checking with caching
+    // Only check achievements when it makes sense (major milestones, Tasbih completions, etc.)
+    if (state.settings.notifications && shouldCheckAchievements(newCount, previousCount)) {
+      try {
+        // Generate cache key based on relevant data
+        const cacheKey = `${id}-${newCount}-${state.sessions.length}-${Date.now()}`;
+        
+        // Check if we need to recalculate achievements
+        const now = Date.now();
+        const timeSinceLastCheck = now - lastAchievementCheck;
+        const shouldCheck = timeSinceLastCheck > APP_CONSTANTS.PERFORMANCE.ACHIEVEMENT_CACHE_TTL;
+        
+        if (!shouldCheck && achievementCache.has(cacheKey)) {
+          // Use cached result
+          const cachedResult = achievementCache.get(cacheKey);
+          if (cachedResult && cachedResult.length > 0) {
+            for (const achievement of cachedResult) {
+              await notifications.showSmartAchievementNotification(achievement);
+            }
+          }
+          return;
+        }
+        
+        // Calculate previous and new user stats
+        const previousStats = achievementManager.calculateUserStats(
+          state.counters.map(c => c.id === id ? { ...c, count: previousCount } : c),
+          state.sessions,
+          [] // TODO: Add achievements to state
+        );
+        
+        const newStats = achievementManager.calculateUserStats(
+          state.counters.map(c => c.id === id ? { ...c, count: newCount } : c),
+          state.sessions,
+          [] // TODO: Add achievements to state
+        );
 
-      // Get user ranking for top 10 checks
-      const userRanking = getUserRanking();
+        // Get user ranking for top 10 checks (simplified for now)
+        const userRanking = { percentile: 50, rank: 'Getting Started' as const };
 
-      // Check for legendary achievements only
-      const triggeredAchievements = achievementManager.shouldNotify(
-        previousStats, 
-        newStats, 
-        userRanking
-      );
-      
-      // Send notifications for triggered legendary achievements
-      for (const achievement of triggeredAchievements) {
-        await notifications.showSmartAchievementNotification(achievement);
+        // Check for triggered achievements
+        const triggeredAchievements = achievementManager.shouldNotify(
+          previousStats, 
+          newStats, 
+          userRanking
+        );
+        
+        // Cache the result
+        achievementCache.set(cacheKey, triggeredAchievements);
+        setLastAchievementCheck(now);
+        
+        // Clean old cache entries (keep only last 10)
+        if (achievementCache.size > 10) {
+          const keys = Array.from(achievementCache.keys());
+          keys.slice(0, -10).forEach(key => achievementCache.delete(key));
+        }
+        
+        // Send notifications for triggered achievements
+        for (const achievement of triggeredAchievements) {
+          await notifications.showSmartAchievementNotification(achievement);
+        }
+      } catch (achievementError) {
+        // Silently handle achievement errors to not disrupt counting
+        secureLogger.error('Achievement check error', achievementError, 'TasbeehContext');
       }
     }
 
     debouncedSave();
-  }, [state.counters, state.sessions, state.activeSession, state.settings.hapticFeedback, state.settings.notifications, debouncedSave]);
+  }, [state.counters, state.sessions, state.activeSession, state.settings.hapticFeedback, state.settings.notifications, achievementCache, lastAchievementCheck, debouncedSave]);
 
   const resetCounter = useCallback(async (id: string) => {
     // End active session if exists
@@ -440,8 +488,13 @@ export const TasbeehProvider = React.memo(({ children }: { children: React.React
     return streakDays;
   };
 
-  // Settings actions
+  // Settings actions with haptic management integration
   const updateSettings = useCallback(async (updates: Partial<Settings>) => {
+    // Update haptic manager when haptic feedback setting changes
+    if ('hapticFeedback' in updates) {
+      setHapticsEnabled(updates.hapticFeedback ?? false);
+    }
+    
     dispatch({ type: 'SET_SETTINGS', payload: { ...state.settings, ...updates } });
     debouncedSave();
   }, [state.settings, debouncedSave]);
@@ -555,7 +608,7 @@ export const TasbeehProvider = React.memo(({ children }: { children: React.React
         dispatch({ type: 'SET_ERROR', payload: successMessage });
         setTimeout(() => {
           dispatch({ type: 'SET_ERROR', payload: null });
-        }, 5000); // Longer timeout for email confirmation message
+        }, APP_CONSTANTS.UI.MESSAGE_TIMEOUT_LONG);
       } else {
         secureLogger.error('Sign up completed but no user data returned', response, 'TasbeehContext');
         dispatch({ type: 'SET_ERROR', payload: 'Account creation completed but verification needed. Please try signing in.' });

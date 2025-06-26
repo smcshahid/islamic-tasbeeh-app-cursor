@@ -4,6 +4,7 @@ import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import { secureLogger } from './secureLogger';
+import { APP_CONSTANTS } from '../constants/app';
 
 const STORAGE_KEYS = {
   COUNTERS: 'tasbeeh_counters',
@@ -62,8 +63,8 @@ export const storage = {
 
   async saveSessions(sessions: Session[]): Promise<void> {
     try {
-      // Keep only the last 100 sessions to manage storage
-      const limitedSessions = sessions.slice(-100);
+          // Keep only the last sessions to manage storage
+    const limitedSessions = sessions.slice(-APP_CONSTANTS.STORAGE.MAX_SESSIONS);
       await AsyncStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify(limitedSessions));
     } catch (error) {
       secureLogger.error('Error saving sessions', error, 'Storage');

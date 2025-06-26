@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,12 +9,26 @@ import {
   Modal,
   TextInput,
   ScrollView,
+  Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTasbeeh } from '../../src/contexts/TasbeehContext';
 import { useAppTheme } from '../../src/utils/theme';
 import { COLORS, Counter } from '../../src/types';
+import { APP_CONSTANTS } from '../../src/constants/app';
+import { CounterSkeleton } from '../../src/components/SkeletonLoader';
+import { CounterErrorBoundary } from '../../src/components/ErrorBoundary';
+import { 
+  getCounterA11yProps, 
+  getButtonA11yProps, 
+  getProgressA11yProps,
+  announceToScreenReader,
+  getAnimationConfig,
+  getFontScale,
+  getAccessibleColors,
+  getIslamicCountingLabels
+} from '../../src/utils/accessibility';
 
 export default function CounterScreen() {
   const { isDark } = useAppTheme();
@@ -38,6 +52,12 @@ export default function CounterScreen() {
   const [newCounterTarget, setNewCounterTarget] = useState('');
   const [targetValue, setTargetValue] = useState('');
   const [selectedColor, setSelectedColor] = useState(COLORS.primary.blue);
+  
+  // Accessibility refs and config
+  const counterRef = useRef<View>(null);
+  const animationConfig = getAnimationConfig();
+  const fontScale = getFontScale();
+  const accessibleColors = getAccessibleColors(isDark ? 'dark' : 'light');
 
   // Update session timer
   useEffect(() => {
@@ -54,14 +74,24 @@ export default function CounterScreen() {
       const minutes = Math.floor(duration / 60);
       const seconds = duration % 60;
       setSessionTime(`${minutes}:${seconds.toString().padStart(2, '0')}`);
-    }, 1000);
+          }, APP_CONSTANTS.TIMERS.SESSION_UPDATE_INTERVAL);
 
     return () => clearInterval(interval);
   }, [activeSession]);
 
   const handleIncrement = async () => {
     if (!currentCounter) return;
+    
+    const previousCount = currentCounter.count;
     await incrementCounter(currentCounter.id);
+    
+    // Announce count updates to screen readers for significant milestones
+    const newCount = currentCounter.count + 1;
+    if (newCount % APP_CONSTANTS.ISLAMIC.TASBIH_COUNT === 0 || newCount % APP_CONSTANTS.ISLAMIC.MILESTONE_100 === 0 || 
+        (currentCounter.target && newCount === currentCounter.target)) {
+      const announcement = getIslamicCountingLabels(newCount, 'general');
+      announceToScreenReader(announcement);
+    }
   };
 
   const handleReset = () => {
@@ -124,11 +154,7 @@ export default function CounterScreen() {
   if (isLoading) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: isDark ? COLORS.neutral.gray900 : COLORS.neutral.gray50 }]}>
-        <View style={styles.loadingContainer}>
-          <Text style={[styles.loadingText, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}>
-            Loading...
-          </Text>
-        </View>
+        <CounterSkeleton />
       </SafeAreaView>
     );
   }
@@ -147,21 +173,31 @@ export default function CounterScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: isDark ? COLORS.neutral.gray900 : COLORS.neutral.gray50 }]}>
-      <LinearGradient
-        colors={[currentCounter.color, currentCounter.color + '80']}
-        style={styles.gradient}
-      >
+      <CounterErrorBoundary>
+        <LinearGradient
+          colors={[currentCounter.color, currentCounter.color + '80']}
+          style={styles.gradient}
+        >
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.counterSelector}
             onPress={() => setShowCounterSelector(true)}
+            {...getButtonA11yProps(
+              `Select counter: ${currentCounter.name}`,
+              'Opens counter selection menu'
+            )}
           >
             <Text style={styles.counterName}>{currentCounter.name}</Text>
             <Ionicons name="chevron-down" size={20} color={COLORS.neutral.white} />
           </TouchableOpacity>
           
-          <Text style={styles.sessionTimer}>
+          <Text 
+            style={styles.sessionTimer}
+            {...getCounterA11yProps(0, `Session time ${sessionTime}`, undefined)}
+            accessibilityLabel={`Current session duration: ${sessionTime}`}
+            accessibilityRole="timer"
+          >
             Session: {sessionTime}
           </Text>
         </View>
@@ -169,7 +205,14 @@ export default function CounterScreen() {
         {/* Target Progress */}
         {currentCounter.target && (
           <View style={styles.progressContainer}>
-            <View style={styles.progressBar}>
+            <View 
+              style={styles.progressBar}
+              {...getProgressA11yProps(
+                currentCounter.count, 
+                currentCounter.target, 
+                `${currentCounter.name} progress`
+              )}
+            >
               <View
                 style={[
                   styles.progressFill,
@@ -177,7 +220,10 @@ export default function CounterScreen() {
                 ]}
               />
             </View>
-            <Text style={styles.progressText}>
+            <Text 
+              style={styles.progressText}
+              accessibilityLabel={`Progress: ${currentCounter.count} out of ${currentCounter.target} completed. ${getProgressPercentage().toFixed(0)} percent complete.`}
+            >
               {currentCounter.count} / {currentCounter.target}
             </Text>
           </View>
@@ -185,14 +231,40 @@ export default function CounterScreen() {
 
         {/* Main Counter */}
         <TouchableOpacity
+          ref={counterRef}
           style={styles.counterArea}
           onPress={handleIncrement}
           activeOpacity={0.8}
+          {...getCounterA11yProps(
+            currentCounter.count, 
+            currentCounter.name, 
+            currentCounter.target
+          )}
+          accessibilityLabel={getIslamicCountingLabels(currentCounter.count, 'general')}
+          accessibilityActions={[
+            { name: 'increment', label: 'Increment counter' },
+            { name: 'activate', label: 'Tap to count' }
+          ]}
+          onAccessibilityAction={(event) => {
+            if (event.nativeEvent.actionName === 'increment' || 
+                event.nativeEvent.actionName === 'activate') {
+              handleIncrement();
+            }
+          }}
         >
-          <Text style={styles.counterValue}>
+          <Text 
+            style={[
+              styles.counterValue,
+              { fontSize: 72 * fontScale }
+            ]}
+            accessibilityElementsHidden={true}
+          >
             {currentCounter.count.toLocaleString()}
           </Text>
-          <Text style={styles.tapInstruction}>
+          <Text 
+            style={styles.tapInstruction}
+            accessibilityElementsHidden={true}
+          >
             Tap to count
           </Text>
         </TouchableOpacity>
@@ -202,6 +274,11 @@ export default function CounterScreen() {
           <TouchableOpacity
             style={[styles.actionButton, styles.resetButton]}
             onPress={handleReset}
+            {...getButtonA11yProps(
+              'Reset counter',
+              `Reset ${currentCounter.name} counter to zero`,
+              false
+            )}
           >
             <Ionicons name="refresh" size={24} color={COLORS.neutral.white} />
             <Text style={styles.actionButtonText}>Reset</Text>
@@ -210,12 +287,20 @@ export default function CounterScreen() {
           <TouchableOpacity
             style={[styles.actionButton, styles.targetButton]}
             onPress={handleSetTarget}
+            {...getButtonA11yProps(
+              'Set target',
+              currentCounter.target 
+                ? `Current target is ${currentCounter.target}. Tap to change target.`
+                : 'Set a target count for this counter',
+              false
+            )}
           >
             <Ionicons name="flag" size={24} color={COLORS.neutral.white} />
             <Text style={styles.actionButtonText}>Target</Text>
           </TouchableOpacity>
         </View>
       </LinearGradient>
+      </CounterErrorBoundary>
 
       {/* Counter Selector Modal */}
       <Modal
@@ -407,7 +492,7 @@ export default function CounterScreen() {
                   Popular Targets
                 </Text>
                 <View style={styles.presetTargetsGrid}>
-                  {[33, 99, 100, 300, 500, 1000].map((preset) => (
+                  {[APP_CONSTANTS.ISLAMIC.TASBIH_COUNT, APP_CONSTANTS.ISLAMIC.ASMA_UL_HUSNA, APP_CONSTANTS.ISLAMIC.MILESTONE_100, APP_CONSTANTS.ISLAMIC.MILESTONE_300, APP_CONSTANTS.ISLAMIC.MILESTONE_500, APP_CONSTANTS.ISLAMIC.MILESTONE_1000].map((preset) => (
                     <TouchableOpacity
                       key={preset}
                       style={[
@@ -438,7 +523,7 @@ export default function CounterScreen() {
                         {preset}
                       </Text>
                       <Text style={[styles.presetTargetLabel, { color: isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray600 }]}>
-                        {preset === 33 ? 'Tasbih' : preset === 99 ? 'Asma ul Husna' : 'Target'}
+                        {preset === APP_CONSTANTS.ISLAMIC.TASBIH_COUNT ? 'Tasbih' : preset === APP_CONSTANTS.ISLAMIC.ASMA_UL_HUSNA ? 'Asma ul Husna' : 'Target'}
                       </Text>
                     </TouchableOpacity>
                   ))}

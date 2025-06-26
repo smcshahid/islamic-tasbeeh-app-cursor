@@ -1,6 +1,7 @@
 /**
  * Achievement and Level System for Tasbeeh App
  * Determines when users should receive notifications and their current level
+ * PERFORMANCE OPTIMIZED: Added caching and throttling mechanisms
  */
 
 export interface Achievement {
@@ -48,6 +49,29 @@ export interface GlobalStats {
   medianCounts: number;
   averageStreak: number;
 }
+
+// Performance optimization: Cache for computed stats
+interface StatsCache {
+  data: UserStats | null;
+  timestamp: number;
+  countersHash: string;
+  sessionsHash: string;
+}
+
+// Performance optimization: Major milestone thresholds for quick checking
+const MAJOR_MILESTONES = new Set([
+  100, 500, 1000, 2500, 5000, 10000, 15000, 25000, 50000, 100000, 250000, 500000, 1000000
+]);
+
+// Performance optimization: Check if a count is a major milestone
+const isMajorMilestone = (count: number): boolean => {
+  return MAJOR_MILESTONES.has(count) || count % 10000 === 0;
+};
+
+// Performance optimization: Quick hash function for arrays
+const quickHash = (data: any[]): string => {
+  return `${data.length}_${data[0]?.id || ''}_${data[data.length - 1]?.updatedAt || ''}`;
+};
 
 // User Level Definitions
 export const USER_LEVELS: UserLevel[] = [
@@ -280,6 +304,19 @@ export class AchievementManager {
   private static instance: AchievementManager;
   private lastNotificationTime: number = 0;
   private readonly NOTIFICATION_COOLDOWN = 30000; // 30 seconds between notifications
+  
+  // Performance optimization: Add caching
+  private statsCache: StatsCache = {
+    data: null,
+    timestamp: 0,
+    countersHash: '',
+    sessionsHash: ''
+  };
+  private readonly CACHE_DURATION = 60000; // 1 minute cache
+  
+  // Performance optimization: Achievement check throttling
+  private lastAchievementCheck: number = 0;
+  private readonly ACHIEVEMENT_CHECK_COOLDOWN = 5000; // 5 seconds between achievement checks
 
   static getInstance(): AchievementManager {
     if (!AchievementManager.instance) {
@@ -290,25 +327,53 @@ export class AchievementManager {
 
   /**
    * Calculate user's current level based on total counts
+   * PERFORMANCE OPTIMIZED: Using binary search for level lookup
    */
   calculateUserLevel(totalCounts: number): UserLevel {
-    for (let i = USER_LEVELS.length - 1; i >= 0; i--) {
-      const level = USER_LEVELS[i];
+    // Binary search optimization for large level arrays
+    let left = 0;
+    let right = USER_LEVELS.length - 1;
+    let result = USER_LEVELS[0];
+    
+    while (left <= right) {
+      const mid = Math.floor((left + right) / 2);
+      const level = USER_LEVELS[mid];
+      
       if (totalCounts >= level.minCounts) {
-        return level;
+        result = level;
+        left = mid + 1;
+      } else {
+        right = mid - 1;
       }
     }
-    return USER_LEVELS[0]; // Default to newcomer
+    
+    return result;
   }
 
   /**
    * Calculate comprehensive user statistics
+   * PERFORMANCE OPTIMIZED: Added caching and early returns
    */
   calculateUserStats(
     counters: any[],
     sessions: any[],
     achievements: string[] = []
   ): UserStats {
+    // Performance optimization: Check cache first
+    const countersHash = quickHash(counters);
+    const sessionsHash = quickHash(sessions);
+    const now = Date.now();
+    
+    if (
+      this.statsCache.data &&
+      now - this.statsCache.timestamp < this.CACHE_DURATION &&
+      this.statsCache.countersHash === countersHash &&
+      this.statsCache.sessionsHash === sessionsHash
+    ) {
+      return this.statsCache.data;
+    }
+
+    // Compute stats
     const totalCounts = counters.reduce((sum, counter) => sum + counter.count, 0);
     const totalSessions = sessions.length;
     const totalTimeMinutes = Math.round(
@@ -327,7 +392,7 @@ export class AchievementManager {
 
     const level = this.calculateUserLevel(totalCounts);
 
-    return {
+    const stats: UserStats = {
       level,
       totalCounts,
       totalSessions,
@@ -342,11 +407,21 @@ export class AchievementManager {
       lastNotificationTime: this.lastNotificationTime,
       notificationCooldown: this.NOTIFICATION_COOLDOWN / 1000 / 60 // in minutes
     };
+
+    // Performance optimization: Update cache
+    this.statsCache = {
+      data: stats,
+      timestamp: now,
+      countersHash,
+      sessionsHash
+    };
+
+    return stats;
   }
 
   /**
    * Check if user should receive achievement notifications
-   * Only triggers for the most special and meaningful achievements with cooldown
+   * PERFORMANCE OPTIMIZED: Added throttling and early returns
    */
   shouldNotify(
     previousStats: UserStats | null,
@@ -355,9 +430,27 @@ export class AchievementManager {
   ): Achievement[] {
     const now = Date.now();
     
-    // Respect notification cooldown
+    // Performance optimization: Respect notification cooldown
     if (now - this.lastNotificationTime < this.NOTIFICATION_COOLDOWN) {
       return [];
+    }
+
+    // Performance optimization: Throttle achievement checks
+    if (now - this.lastAchievementCheck < this.ACHIEVEMENT_CHECK_COOLDOWN) {
+      return [];
+    }
+    this.lastAchievementCheck = now;
+
+    // Performance optimization: Early return if no significant change
+    if (previousStats) {
+      const countDiff = newStats.totalCounts - previousStats.totalCounts;
+      const sessionDiff = newStats.totalSessions - previousStats.totalSessions;
+      const streakDiff = newStats.currentStreak - previousStats.currentStreak;
+      
+      // Only check achievements if there's a significant change
+      if (countDiff === 0 && sessionDiff === 0 && streakDiff === 0) {
+        return [];
+      }
     }
 
     const triggeredAchievements: Achievement[] = [];
@@ -372,14 +465,16 @@ export class AchievementManager {
       }
     }
 
-    // Check for legendary milestone achievements (only Million Count Legend)
-    const milestoneAchievements = ACHIEVEMENTS.filter(a => a.type === 'milestone');
-    for (const achievement of milestoneAchievements) {
-      const wasCompleted = previousStats ? previousStats.totalCounts >= achievement.threshold : false;
-      const isNowCompleted = newStats.totalCounts >= achievement.threshold;
-      
-      if (!wasCompleted && isNowCompleted) {
-        triggeredAchievements.push(achievement);
+    // Performance optimization: Only check milestone achievements for major milestones
+    if (!previousStats || isMajorMilestone(newStats.totalCounts)) {
+      const milestoneAchievements = ACHIEVEMENTS.filter(a => a.type === 'milestone');
+      for (const achievement of milestoneAchievements) {
+        const wasCompleted = previousStats ? previousStats.totalCounts >= achievement.threshold : false;
+        const isNowCompleted = newStats.totalCounts >= achievement.threshold;
+        
+        if (!wasCompleted && isNowCompleted) {
+          triggeredAchievements.push(achievement);
+        }
       }
     }
 
@@ -436,6 +531,37 @@ export class AchievementManager {
     }
 
     return triggeredAchievements;
+  }
+
+  /**
+   * Performance optimization: Quick check if count should trigger achievement check
+   */
+  shouldCheckAchievements(count: number, previousCount?: number): boolean {
+    // Always check for major milestones
+    if (isMajorMilestone(count)) return true;
+    
+    // Check every 33 counts (Tasbih completion)
+    if (count % 33 === 0) return true;
+    
+    // Check every 99 counts (Asma ul Husna completion)
+    if (count % 99 === 0) return true;
+    
+    // Check if crossing a hundred boundary
+    if (previousCount && Math.floor(count / 100) > Math.floor(previousCount / 100)) return true;
+    
+    return false;
+  }
+
+  /**
+   * Clear cache - useful when data changes significantly
+   */
+  clearCache(): void {
+    this.statsCache = {
+      data: null,
+      timestamp: 0,
+      countersHash: '',
+      sessionsHash: ''
+    };
   }
 
   /**
@@ -519,21 +645,22 @@ export class AchievementManager {
     // Calculate longest streak
     let longestStreak = 0;
     let tempStreak = 0;
-    let previousDate: Date | null = null;
-
-    for (const date of sortedDates.reverse()) {
-      if (previousDate) {
-        const dayDiff = Math.abs(date.getTime() - previousDate.getTime()) / (1000 * 60 * 60 * 24);
+    
+    for (let i = sortedDates.length - 1; i >= 0; i--) {
+      if (i === sortedDates.length - 1) {
+        tempStreak = 1;
+      } else {
+        const currentDate = sortedDates[i];
+        const nextDate = sortedDates[i + 1];
+        const dayDiff = Math.floor((currentDate.getTime() - nextDate.getTime()) / (1000 * 60 * 60 * 24));
+        
         if (dayDiff === 1) {
           tempStreak++;
         } else {
           longestStreak = Math.max(longestStreak, tempStreak);
           tempStreak = 1;
         }
-      } else {
-        tempStreak = 1;
       }
-      previousDate = date;
     }
     longestStreak = Math.max(longestStreak, tempStreak);
 
@@ -545,22 +672,30 @@ export class AchievementManager {
     weeklyAverage: number;
     monthlyAverage: number;
   } {
-    if (sessions.length === 0) return { dailyAverage: 0, weeklyAverage: 0, monthlyAverage: 0 };
+    if (sessions.length === 0) {
+      return { dailyAverage: 0, weeklyAverage: 0, monthlyAverage: 0 };
+    }
 
-    const now = new Date();
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const now = Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
+    const weekMs = 7 * dayMs;
+    const monthMs = 30 * dayMs;
 
-    const dailySessions = sessions.filter(s => new Date(s.startTime) >= oneDayAgo);
-    const weeklySessions = sessions.filter(s => new Date(s.startTime) >= sevenDaysAgo);
-    const monthlySessions = sessions.filter(s => new Date(s.startTime) >= thirtyDaysAgo);
+    const dailySessions = sessions.filter(s => 
+      now - new Date(s.startTime).getTime() <= dayMs
+    );
+    const weeklySessions = sessions.filter(s => 
+      now - new Date(s.startTime).getTime() <= weekMs
+    );
+    const monthlySessions = sessions.filter(s => 
+      now - new Date(s.startTime).getTime() <= monthMs
+    );
 
-    const dailyAverage = dailySessions.reduce((sum, s) => sum + s.totalCounts, 0);
-    const weeklyAverage = Math.round(weeklySessions.reduce((sum, s) => sum + s.totalCounts, 0) / 7);
-    const monthlyAverage = Math.round(monthlySessions.reduce((sum, s) => sum + s.totalCounts, 0) / 30);
-
-    return { dailyAverage, weeklyAverage, monthlyAverage };
+    return {
+      dailyAverage: dailySessions.reduce((sum, s) => sum + s.totalCounts, 0),
+      weeklyAverage: Math.round(weeklySessions.reduce((sum, s) => sum + s.totalCounts, 0) / 7),
+      monthlyAverage: Math.round(monthlySessions.reduce((sum, s) => sum + s.totalCounts, 0) / 30),
+    };
   }
 
   private generateComparisonMessage(
@@ -568,20 +703,21 @@ export class AchievementManager {
     globalStats: GlobalStats,
     rank: string
   ): string {
-    const messages = [
-      `You're in the ${rank} of all users! 🎉`,
-      `Your daily average (${userStats.dailyAverage}) is ${
-        userStats.dailyAverage > globalStats.averageDailyCounts ? 'above' : 'below'
-      } the global average of ${Math.round(globalStats.averageDailyCounts)}.`,
-      `You've completed ${userStats.totalSessions} sessions with an average of ${userStats.averageSessionLength} minutes each.`
-    ];
-
-    if (userStats.currentStreak > globalStats.averageStreak) {
-      messages.push(`Your current ${userStats.currentStreak}-day streak is impressive! 🔥`);
+    const comparison = userStats.totalCounts / globalStats.medianCounts;
+    
+    if (rank.includes('Top')) {
+      return `You're in the ${rank} of all users! Your ${userStats.totalCounts.toLocaleString()} counts place you among the most dedicated practitioners.`;
+    } else if (comparison >= 1) {
+      return `You're ${Math.round(comparison)}x above the average user! Keep up the excellent spiritual practice.`;
+    } else {
+      return `You're building a beautiful practice! Every count brings you closer to your spiritual goals.`;
     }
-
-    return messages.join(' ');
   }
 }
 
-export const achievementManager = AchievementManager.getInstance(); 
+// Export singleton instance with performance optimizations
+export const achievementManager = AchievementManager.getInstance();
+
+// Performance helper functions
+export const shouldCheckAchievements = achievementManager.shouldCheckAchievements.bind(achievementManager);
+export const clearAchievementCache = achievementManager.clearCache.bind(achievementManager); 

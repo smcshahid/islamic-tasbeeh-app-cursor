@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTasbeeh } from '../../src/contexts/TasbeehContext';
 import { useAppTheme } from '../../src/utils/theme';
+import { HistoryErrorBoundary } from '../../src/components/ErrorBoundary';
 import { COLORS, Session } from '../../src/types';
 
 const { width } = Dimensions.get('window');
@@ -738,7 +739,8 @@ export default function HistoryScreen() {
       styles.container,
       { backgroundColor: isDark ? COLORS.neutral.gray900 : COLORS.neutral.gray50 }
     ]}>
-      {/* Header */}
+      <HistoryErrorBoundary>
+        {/* Header */}
       <View style={styles.header}>
         <Text style={[
           styles.headerTitle,
@@ -935,6 +937,7 @@ export default function HistoryScreen() {
           </View>
         )}
       </ScrollView>
+      </HistoryErrorBoundary>
 
       {/* Filter Modal */}
       <Modal
