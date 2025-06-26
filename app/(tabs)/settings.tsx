@@ -16,6 +16,7 @@ import { router } from 'expo-router';
 import { useTasbeeh } from '../../src/contexts/TasbeehContext';
 import { useAppTheme } from '../../src/utils/theme';
 import { notifications } from '../../src/utils/notifications';
+import storage from '../../src/utils/storage';
 import { COLORS, Counter, ColorKey } from '../../src/types';
 
 export default function SettingsScreen() {
@@ -23,6 +24,7 @@ export default function SettingsScreen() {
   const {
     settings,
     counters,
+    sessions,
     user,
     updateSettings,
     deleteCounter,
@@ -31,6 +33,7 @@ export default function SettingsScreen() {
     signInAsGuest,
     signOut,
     syncWithCloud,
+    loadFromStorage,
     isLoading,
     error,
   } = useTasbeeh();
@@ -40,6 +43,8 @@ export default function SettingsScreen() {
   const [editCounterName, setEditCounterName] = useState('');
   const [editCounterTarget, setEditCounterTarget] = useState('');
   const [editCounterColor, setEditCounterColor] = useState(COLORS.primary.blue);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
 
   const handleEditCounter = (counter: Counter) => {
     setEditingCounter(counter);
@@ -130,6 +135,141 @@ export default function SettingsScreen() {
         },
       ]
     );
+  };
+
+  const handleExportData = async () => {
+    try {
+      setIsExporting(true);
+      const totalCounts = counters.reduce((sum, counter) => sum + counter.count, 0);
+      
+      Alert.alert(
+        'Export Data',
+        `Export your data to backup file?\n\nCounters: ${counters.length}\nSessions: ${sessions.length}\nTotal Counts: ${totalCounts.toLocaleString()}`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Export',
+            onPress: async () => {
+              try {
+                await storage.exportData();
+                Alert.alert(
+                  'Export Successful',
+                  'Your data has been exported successfully. The backup file has been shared.',
+                  [{ text: 'OK' }]
+                );
+              } catch (error) {
+                Alert.alert(
+                  'Export Failed',
+                  error instanceof Error ? error.message : 'Failed to export data. Please try again.',
+                  [{ text: 'OK' }]
+                );
+              }
+            },
+          },
+        ]
+      );
+    } catch (error) {
+      Alert.alert(
+        'Export Failed',
+        'Failed to prepare export. Please try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleImportData = async () => {
+    try {
+      setIsImporting(true);
+      
+      Alert.alert(
+        'Import Data',
+        'Choose how to import your backup data:',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Replace All',
+            style: 'destructive',
+            onPress: async () => {
+              await performImport('replace');
+            },
+          },
+          {
+            text: 'Merge',
+            onPress: async () => {
+              await performImport('merge');
+            },
+          },
+        ]
+      );
+    } catch (error) {
+      Alert.alert(
+        'Import Failed',
+        'Failed to start import. Please try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const performImport = async (mode: 'replace' | 'merge') => {
+    try {
+      const result = await storage.importData();
+      
+      if (!result.success) {
+        Alert.alert(
+          'Import Failed',
+          result.error || 'Failed to import data.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      if (!result.data) {
+        Alert.alert('Import Failed', 'No data found in the selected file.', [{ text: 'OK' }]);
+        return;
+      }
+
+      const importData = result.data;
+      const modeText = mode === 'replace' ? 'replace all current data' : 'merge with current data';
+      
+      Alert.alert(
+        'Confirm Import',
+        `Import ${importData.metadata.totalCounters} counters and ${importData.metadata.totalSessions} sessions?\n\nThis will ${modeText}.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Import',
+            onPress: async () => {
+              try {
+                await storage.applyImportedData(importData, mode);
+                await loadFromStorage(); // Reload data in the app
+                
+                Alert.alert(
+                  'Import Successful',
+                  `Data imported successfully!\n\nCounters: ${importData.metadata.totalCounters}\nSessions: ${importData.metadata.totalSessions}`,
+                  [{ text: 'OK' }]
+                );
+              } catch (error) {
+                Alert.alert(
+                  'Import Failed',
+                  error instanceof Error ? error.message : 'Failed to import data.',
+                  [{ text: 'OK' }]
+                );
+              }
+            },
+          },
+        ]
+      );
+    } catch (error) {
+      Alert.alert(
+        'Import Failed',
+        'Failed to process import file. Please check the file format.',
+        [{ text: 'OK' }]
+      );
+    }
   };
 
   const SettingItem = ({ 
@@ -331,6 +471,20 @@ export default function SettingsScreen() {
                 thumbColor={settings.autoSync ? COLORS.neutral.white : COLORS.neutral.gray500}
               />
             }
+          />
+
+          <SettingItem
+            icon="cloud-upload"
+            title="Export Data"
+            subtitle="Export your data to a backup file"
+            onPress={handleExportData}
+          />
+
+          <SettingItem
+            icon="cloud-download"
+            title="Import Data"
+            subtitle="Import data from a backup file"
+            onPress={handleImportData}
           />
         </View>
 

@@ -269,19 +269,44 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: 'UPDATE_SESSION', payload: { id: state.activeSession.id, updates: updatedSession } });
     }
 
-    // Check for achievements and notifications
+    // Enhanced achievements and notifications
     if (state.settings.notifications) {
-      // Check if target reached
+      // Check if significant target reached (only for major targets)
       if (counter.target && newCount >= counter.target && counter.count < counter.target) {
         await notifications.showAchievementNotification(counter.name, counter.target, newCount);
       }
 
-      // Check for milestones
+      // Check for major milestones
       await notifications.showMilestoneNotification(counter.name, newCount);
+
+      // Check for session achievements
+      const totalSessions = state.sessions.length + (state.activeSession ? 1 : 0);
+      await notifications.showSessionAchievement(totalSessions);
+
+      // Check for time-based achievements
+      const totalTimeMinutes = Math.round(
+        state.sessions.reduce((sum, session) => sum + session.duration, 0) / 60
+      );
+      await notifications.showTimeAchievement(totalTimeMinutes);
+
+      // Check for daily goal achievement (if daily goal is set and reached)
+      const today = new Date().toDateString();
+      const todaySessions = state.sessions.filter(session => 
+        new Date(session.startTime).toDateString() === today
+      );
+      const todayCounts = todaySessions.reduce((sum, session) => sum + session.totalCounts, 0) + 
+        (state.activeSession && new Date(state.activeSession.startTime).toDateString() === today 
+          ? state.activeSession.totalCounts : 0);
+      
+      // Check if user has a daily goal (assuming 100 as default daily goal)
+      const dailyGoal = 100; // This could be made configurable in settings
+      if (todayCounts >= dailyGoal && (todayCounts - 1) < dailyGoal) {
+        await notifications.showDailyGoalAchievement(dailyGoal, todayCounts);
+      }
     }
 
     debouncedSave();
-  }, [state.counters, state.settings.hapticFeedback, state.settings.notifications, state.activeSession, debouncedSave]);
+  }, [state.counters, state.sessions, state.activeSession, state.settings.hapticFeedback, state.settings.notifications, debouncedSave]);
 
   const resetCounter = useCallback(async (id: string) => {
     // End active session if exists
@@ -340,8 +365,64 @@ export function TasbeehProvider({ children }: { children: React.ReactNode }) {
 
     dispatch({ type: 'ADD_SESSION', payload: completedSession });
     dispatch({ type: 'SET_ACTIVE_SESSION', payload: null });
+
+    // Check for streak achievements after completing a session
+    if (state.settings.notifications) {
+      // Calculate consecutive days with sessions
+      const allSessions = [...state.sessions, completedSession];
+      const streakDays = calculateStreakDays(allSessions);
+      
+      if (streakDays > 0) {
+        await notifications.showStreakNotification(streakDays);
+      }
+    }
+
     debouncedSave();
-  }, [state.activeSession, debouncedSave]);
+  }, [state.activeSession, state.sessions, state.settings.notifications, debouncedSave]);
+
+  // Helper function to calculate consecutive days with sessions
+  const calculateStreakDays = (sessions: Session[]) => {
+    if (sessions.length === 0) return 0;
+
+    // Group sessions by date
+    const sessionsByDate = sessions.reduce((acc, session) => {
+      const date = new Date(session.startTime).toDateString();
+      if (!acc[date]) {
+        acc[date] = [];
+      }
+      acc[date].push(session);
+      return acc;
+    }, {} as Record<string, Session[]>);
+
+    // Get sorted unique dates
+    const sortedDates = Object.keys(sessionsByDate)
+      .map(date => new Date(date))
+      .sort((a, b) => b.getTime() - a.getTime()); // Most recent first
+
+    if (sortedDates.length === 0) return 0;
+
+    // Calculate streak from today backwards
+    let streakDays = 0;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    for (let i = 0; i < sortedDates.length; i++) {
+      const currentDate = new Date(sortedDates[i]);
+      currentDate.setHours(0, 0, 0, 0);
+      
+      const expectedDate = new Date(today);
+      expectedDate.setDate(today.getDate() - i);
+      expectedDate.setHours(0, 0, 0, 0);
+
+      if (currentDate.getTime() === expectedDate.getTime()) {
+        streakDays++;
+      } else {
+        break;
+      }
+    }
+
+    return streakDays;
+  };
 
   // Settings actions
   const updateSettings = useCallback(async (updates: Partial<Settings>) => {

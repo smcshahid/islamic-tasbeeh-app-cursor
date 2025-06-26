@@ -1,5 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Counter, Session, Settings, User } from '../types';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import * as DocumentPicker from 'expo-document-picker';
 
 const STORAGE_KEYS = {
   COUNTERS: 'tasbeeh_counters',
@@ -9,6 +12,20 @@ const STORAGE_KEYS = {
   ACTIVE_SESSION: 'tasbeeh_active_session',
   CURRENT_COUNTER: 'tasbeeh_current_counter',
 } as const;
+
+// Export/Import data structure
+interface TasbeehExportData {
+  version: string;
+  exportDate: string;
+  counters: Counter[];
+  sessions: Session[];
+  settings: Settings;
+  metadata: {
+    totalCounters: number;
+    totalSessions: number;
+    totalCounts: number;
+  };
+}
 
 export const storage = {
   // Counter operations
@@ -143,6 +160,153 @@ export const storage = {
       console.error('Error saving current counter:', error);
       throw error;
     }
+  },
+
+  // Export data to file
+  async exportData(): Promise<string> {
+    try {
+      const [counters, sessions, settings] = await Promise.all([
+        this.getCounters(),
+        this.getSessions(),
+        this.getSettings(),
+      ]);
+
+      const totalCounts = counters.reduce((sum, counter) => sum + counter.count, 0);
+
+      const exportData: TasbeehExportData = {
+        version: '1.0.0',
+        exportDate: new Date().toISOString(),
+        counters,
+        sessions,
+        settings: settings || {
+          theme: 'auto',
+          language: 'en',
+          hapticFeedback: true,
+          notifications: true,
+          autoSync: false,
+        },
+        metadata: {
+          totalCounters: counters.length,
+          totalSessions: sessions.length,
+          totalCounts,
+        },
+      };
+
+      const jsonString = JSON.stringify(exportData, null, 2);
+      const fileName = `tasbeeh_backup_${new Date().toISOString().split('T')[0]}.json`;
+      const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+
+      await FileSystem.writeAsStringAsync(fileUri, jsonString);
+
+      // Share the file
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'application/json',
+          dialogTitle: 'Export Tasbeeh Data',
+        });
+      }
+
+      return fileUri;
+    } catch (error) {
+      console.error('Error exporting data:', error);
+      throw new Error('Failed to export data. Please try again.');
+    }
+  },
+
+  // Import data from file
+  async importData(): Promise<{
+    success: boolean;
+    data?: TasbeehExportData;
+    error?: string;
+  }> {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/json',
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled) {
+        return { success: false, error: 'Import cancelled' };
+      }
+
+      const fileContent = await FileSystem.readAsStringAsync(result.assets[0].uri);
+      const importData: TasbeehExportData = JSON.parse(fileContent);
+
+      // Validate the imported data structure
+      if (!this.validateImportData(importData)) {
+        return { success: false, error: 'Invalid file format. Please select a valid Tasbeeh backup file.' };
+      }
+
+      return { success: true, data: importData };
+    } catch (error) {
+      console.error('Error importing data:', error);
+      return { success: false, error: 'Failed to import data. Please check the file format.' };
+    }
+  },
+
+  // Apply imported data to storage
+  async applyImportedData(data: TasbeehExportData, mergeMode: 'replace' | 'merge' = 'replace'): Promise<void> {
+    try {
+      if (mergeMode === 'replace') {
+        // Replace all data
+        await this.saveCounters(data.counters);
+        await this.saveSessions(data.sessions);
+        await this.saveSettings(data.settings);
+      } else {
+        // Merge data
+        const existingCounters = await this.getCounters();
+        const existingSessions = await this.getSessions();
+        const existingSettings = await this.getSettings();
+
+        // Merge counters (avoid duplicates by ID)
+        const mergedCounters = [...existingCounters];
+        data.counters.forEach(importedCounter => {
+          const existingIndex = mergedCounters.findIndex(c => c.id === importedCounter.id);
+          if (existingIndex >= 0) {
+            // Update existing counter with imported data if it's newer
+            if (new Date(importedCounter.updatedAt) > new Date(mergedCounters[existingIndex].updatedAt)) {
+              mergedCounters[existingIndex] = importedCounter;
+            }
+          } else {
+            mergedCounters.push(importedCounter);
+          }
+        });
+
+        // Merge sessions (avoid duplicates by ID)
+        const mergedSessions = [...existingSessions];
+        data.sessions.forEach(importedSession => {
+          if (!mergedSessions.some(s => s.id === importedSession.id)) {
+            mergedSessions.push(importedSession);
+          }
+        });
+
+        // Merge settings (keep most recent preferences)
+        const mergedSettings = { ...existingSettings, ...data.settings };
+
+        await this.saveCounters(mergedCounters);
+        await this.saveSessions(mergedSessions);
+        await this.saveSettings(mergedSettings);
+      }
+    } catch (error) {
+      console.error('Error applying imported data:', error);
+      throw new Error('Failed to apply imported data.');
+    }
+  },
+
+  // Validate imported data structure
+  validateImportData(data: any): data is TasbeehExportData {
+    return (
+      data &&
+      typeof data.version === 'string' &&
+      typeof data.exportDate === 'string' &&
+      Array.isArray(data.counters) &&
+      Array.isArray(data.sessions) &&
+      data.settings &&
+      data.metadata &&
+      typeof data.metadata.totalCounters === 'number' &&
+      typeof data.metadata.totalSessions === 'number' &&
+      typeof data.metadata.totalCounts === 'number'
+    );
   },
 
   // Clear all data

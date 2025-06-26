@@ -8,14 +8,30 @@ import {
   TouchableOpacity,
   Modal,
   FlatList,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTasbeeh } from '../../src/contexts/TasbeehContext';
 import { useAppTheme } from '../../src/utils/theme';
 import { COLORS, Session } from '../../src/types';
 
+const { width } = Dimensions.get('window');
+
 type FilterType = 'all' | 'today' | 'week' | 'month' | 'counter';
 type SortType = 'newest' | 'oldest' | 'longest' | 'shortest';
+type ViewType = 'history' | 'achievements';
+
+interface Achievement {
+  id: string;
+  icon: string;
+  title: string;
+  subtitle: string;
+  category: string;
+  isUnlocked: boolean;
+  progress?: number;
+  maxProgress?: number;
+  color: string;
+}
 
 export default function HistoryScreen() {
   const { isDark } = useAppTheme();
@@ -25,6 +41,7 @@ export default function HistoryScreen() {
   const [sort, setSort] = useState<SortType>('newest');
   const [selectedCounterId, setSelectedCounterId] = useState<string | null>(null);
   const [showFilterModal, setShowFilterModal] = useState(false);
+  const [currentView, setCurrentView] = useState<ViewType>('history');
 
   const formatDuration = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -133,6 +150,422 @@ export default function HistoryScreen() {
     };
   }, [sessions]);
 
+  const achievements = useMemo(() => {
+    const completedSessions = sessions.filter(session => session.endTime);
+    const totalCounts = completedSessions.reduce((sum, session) => sum + session.totalCounts, 0);
+    const totalSessions = completedSessions.length;
+    const totalTime = completedSessions.reduce((sum, session) => sum + session.duration, 0);
+    const totalTimeMinutes = Math.floor(totalTime / 60);
+    const totalTimeHours = Math.floor(totalTime / 3600);
+    const longestSession = totalSessions > 0 ? Math.max(...completedSessions.map(session => session.duration)) : 0;
+    
+    // Calculate streaks
+    const today = new Date().toDateString();
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toDateString();
+    const todaySessions = completedSessions.filter(session => 
+      new Date(session.startTime).toDateString() === today
+    );
+    const yesterdaySessions = completedSessions.filter(session => 
+      new Date(session.startTime).toDateString() === yesterday
+    );
+    
+    // Week activity
+    const weekStart = new Date();
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    weekStart.setHours(0, 0, 0, 0);
+    const thisWeekSessions = completedSessions.filter(session => 
+      new Date(session.startTime) >= weekStart
+    );
+    const thisWeekCounts = thisWeekSessions.reduce((sum, session) => sum + session.totalCounts, 0);
+    
+    // Target achievements
+    const targetsReached = counters.filter(counter => counter.target && counter.count >= counter.target).length;
+    const countersWithTargets = counters.filter(counter => counter.target).length;
+    
+    // Most active counter
+    const mostActiveCounter = counters.reduce((max, counter) => 
+      counter.count > (max?.count || 0) ? counter : max
+    , counters[0]);
+    
+    // Calculate consecutive days (simplified)
+    const sortedDates = [...new Set(completedSessions.map(session => 
+      new Date(session.startTime).toDateString()
+    ))].sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+    
+    let currentStreak = 0;
+    let checkDate = new Date();
+    
+    for (let i = 0; i < sortedDates.length; i++) {
+      const sessionDate = new Date(sortedDates[i]);
+      const expectedDate = new Date(checkDate);
+      expectedDate.setDate(expectedDate.getDate() - i);
+      
+      if (sessionDate.toDateString() === expectedDate.toDateString()) {
+        currentStreak++;
+      } else {
+        break;
+      }
+    }
+
+    const achievementList: Achievement[] = [
+      // BEGINNER ACHIEVEMENTS (Getting Started)
+      {
+        id: 'first_count',
+        icon: '🌱',
+        title: 'First Steps',
+        subtitle: 'Complete your first count',
+        category: 'Beginner',
+        isUnlocked: totalCounts >= 1,
+        color: COLORS.primary.green,
+      },
+      {
+        id: 'ten_counts',
+        icon: '🌿',
+        title: 'Growing Faith',
+        subtitle: 'Reach 10 total counts',
+        category: 'Beginner',
+        isUnlocked: totalCounts >= 10,
+        progress: Math.min(totalCounts, 10),
+        maxProgress: 10,
+        color: COLORS.primary.green,
+      },
+      {
+        id: 'first_session',
+        icon: '⭐',
+        title: 'First Session',
+        subtitle: 'Complete your first session',
+        category: 'Beginner',
+        isUnlocked: totalSessions >= 1,
+        color: COLORS.primary.blue,
+      },
+      {
+        id: 'five_sessions',
+        icon: '🎯',
+        title: 'Consistent Start',
+        subtitle: 'Complete 5 sessions',
+        category: 'Beginner',
+        isUnlocked: totalSessions >= 5,
+        progress: Math.min(totalSessions, 5),
+        maxProgress: 5,
+        color: COLORS.primary.blue,
+      },
+      {
+        id: 'hundred_counts',
+        icon: '🥉',
+        title: 'Bronze Counter',
+        subtitle: 'Reach 100 total counts',
+        category: 'Beginner',
+        isUnlocked: totalCounts >= 100,
+        progress: Math.min(totalCounts, 100),
+        maxProgress: 100,
+        color: COLORS.primary.orange,
+      },
+
+      // INTERMEDIATE ACHIEVEMENTS (Building Habit)
+      {
+        id: 'five_hundred_counts',
+        icon: '🥈',
+        title: 'Silver Counter',
+        subtitle: 'Reach 500 total counts',
+        category: 'Intermediate',
+        isUnlocked: totalCounts >= 500,
+        progress: Math.min(totalCounts, 500),
+        maxProgress: 500,
+        color: COLORS.primary.teal,
+      },
+      {
+        id: 'thousand_counts',
+        icon: '🥇',
+        title: 'Gold Counter',
+        subtitle: 'Reach 1,000 total counts',
+        category: 'Intermediate',
+        isUnlocked: totalCounts >= 1000,
+        progress: Math.min(totalCounts, 1000),
+        maxProgress: 1000,
+        color: COLORS.primary.orange,
+      },
+      {
+        id: 'twenty_sessions',
+        icon: '📈',
+        title: 'Building Momentum',
+        subtitle: 'Complete 20 sessions',
+        category: 'Intermediate',
+        isUnlocked: totalSessions >= 20,
+        progress: Math.min(totalSessions, 20),
+        maxProgress: 20,
+        color: COLORS.primary.blue,
+      },
+      {
+        id: 'one_hour_total',
+        icon: '⏰',
+        title: 'Hour of Devotion',
+        subtitle: 'Spend 1 total hour in sessions',
+        category: 'Intermediate',
+        isUnlocked: totalTimeMinutes >= 60,
+        progress: Math.min(totalTimeMinutes, 60),
+        maxProgress: 60,
+        color: COLORS.primary.purple,
+      },
+      {
+        id: 'daily_warrior',
+        icon: '🌅',
+        title: 'Daily Warrior',
+        subtitle: 'Active today',
+        category: 'Intermediate',
+        isUnlocked: todaySessions.length > 0,
+        color: COLORS.primary.pink,
+      },
+      {
+        id: 'weekly_warrior',
+        icon: '📅',
+        title: 'Weekly Warrior',
+        subtitle: 'Active this week',
+        category: 'Intermediate',
+        isUnlocked: thisWeekSessions.length > 0,
+        color: COLORS.primary.indigo,
+      },
+
+      // ADVANCED ACHIEVEMENTS (Mastery)
+      {
+        id: 'five_thousand_counts',
+        icon: '💎',
+        title: 'Diamond Counter',
+        subtitle: 'Reach 5,000 total counts',
+        category: 'Advanced',
+        isUnlocked: totalCounts >= 5000,
+        progress: Math.min(totalCounts, 5000),
+        maxProgress: 5000,
+        color: COLORS.primary.teal,
+      },
+      {
+        id: 'ten_thousand_counts',
+        icon: '🏆',
+        title: 'Master Counter',
+        subtitle: 'Reach 10,000 total counts',
+        category: 'Advanced',
+        isUnlocked: totalCounts >= 10000,
+        progress: Math.min(totalCounts, 10000),
+        maxProgress: 10000,
+        color: COLORS.primary.orange,
+      },
+      {
+        id: 'fifty_sessions',
+        icon: '📊',
+        title: 'Session Pro',
+        subtitle: 'Complete 50 sessions',
+        category: 'Advanced',
+        isUnlocked: totalSessions >= 50,
+        progress: Math.min(totalSessions, 50),
+        maxProgress: 50,
+        color: COLORS.primary.blue,
+      },
+      {
+        id: 'hundred_sessions',
+        icon: '🎖️',
+        title: 'Session Master',
+        subtitle: 'Complete 100 sessions',
+        category: 'Advanced',
+        isUnlocked: totalSessions >= 100,
+        progress: Math.min(totalSessions, 100),
+        maxProgress: 100,
+        color: COLORS.primary.indigo,
+      },
+      {
+        id: 'ten_hours_total',
+        icon: '⚡',
+        title: 'Time Master',
+        subtitle: 'Spend 10 total hours in sessions',
+        category: 'Advanced',
+        isUnlocked: totalTimeHours >= 10,
+        progress: Math.min(totalTimeHours, 10),
+        maxProgress: 10,
+        color: COLORS.primary.purple,
+      },
+      {
+        id: 'long_session',
+        icon: '🔥',
+        title: 'Marathon Session',
+        subtitle: 'Complete a 30+ minute session',
+        category: 'Advanced',
+        isUnlocked: longestSession >= 1800,
+        color: COLORS.primary.pink,
+      },
+
+      // EXPERT ACHIEVEMENTS (Ultimate Goals)
+      {
+        id: 'twenty_five_thousand_counts',
+        icon: '🌟',
+        title: 'Elite Counter',
+        subtitle: 'Reach 25,000 total counts',
+        category: 'Expert',
+        isUnlocked: totalCounts >= 25000,
+        progress: Math.min(totalCounts, 25000),
+        maxProgress: 25000,
+        color: COLORS.primary.emerald,
+      },
+      {
+        id: 'fifty_thousand_counts',
+        icon: '👑',
+        title: 'Royal Counter',
+        subtitle: 'Reach 50,000 total counts',
+        category: 'Expert',
+        isUnlocked: totalCounts >= 50000,
+        progress: Math.min(totalCounts, 50000),
+        maxProgress: 50000,
+        color: COLORS.primary.orange,
+      },
+      {
+        id: 'hundred_thousand_counts',
+        icon: '🌌',
+        title: 'Cosmic Counter',
+        subtitle: 'Reach 100,000 total counts',
+        category: 'Expert',
+        isUnlocked: totalCounts >= 100000,
+        progress: Math.min(totalCounts, 100000),
+        maxProgress: 100000,
+        color: COLORS.primary.purple,
+      },
+      {
+        id: 'two_hundred_sessions',
+        icon: '🎯',
+        title: 'Session Legend',
+        subtitle: 'Complete 200 sessions',
+        category: 'Expert',
+        isUnlocked: totalSessions >= 200,
+        progress: Math.min(totalSessions, 200),
+        maxProgress: 200,
+        color: COLORS.primary.blue,
+      },
+      {
+        id: 'fifty_hours_total',
+        icon: '🕐',
+        title: 'Time Legend',
+        subtitle: 'Spend 50 total hours in sessions',
+        category: 'Expert',
+        isUnlocked: totalTimeHours >= 50,
+        progress: Math.min(totalTimeHours, 50),
+        maxProgress: 50,
+        color: COLORS.primary.indigo,
+      },
+
+      // SPECIAL ACHIEVEMENTS (Consistency & Dedication)
+      {
+        id: 'three_day_streak',
+        icon: '🔥',
+        title: 'Three Day Streak',
+        subtitle: 'Active for 3 consecutive days',
+        category: 'Special',
+        isUnlocked: currentStreak >= 3,
+        progress: Math.min(currentStreak, 3),
+        maxProgress: 3,
+        color: COLORS.primary.pink,
+      },
+      {
+        id: 'week_streak',
+        icon: '🌟',
+        title: 'Week Warrior',
+        subtitle: 'Active for 7 consecutive days',
+        category: 'Special',
+        isUnlocked: currentStreak >= 7,
+        progress: Math.min(currentStreak, 7),
+        maxProgress: 7,
+        color: COLORS.primary.emerald,
+      },
+      {
+        id: 'month_streak',
+        icon: '🏅',
+        title: 'Month Master',
+        subtitle: 'Active for 30 consecutive days',
+        category: 'Special',
+        isUnlocked: currentStreak >= 30,
+        progress: Math.min(currentStreak, 30),
+        maxProgress: 30,
+        color: COLORS.primary.orange,
+      },
+      {
+        id: 'target_achiever',
+        icon: '🎯',
+        title: 'Target Achiever',
+        subtitle: `Reached ${targetsReached || 0} target${(targetsReached || 0) !== 1 ? 's' : ''}`,
+        category: 'Special',
+        isUnlocked: targetsReached > 0,
+        progress: targetsReached || 0,
+        maxProgress: Math.max(countersWithTargets, 1), // Ensure maxProgress is at least 1
+        color: COLORS.primary.teal,
+      },
+      {
+        id: 'multi_counter',
+        icon: '🔄',
+        title: 'Multi-Counter',
+        subtitle: 'Use multiple counters',
+        category: 'Special',
+        isUnlocked: counters.length >= 2,
+        progress: Math.min(counters.length, 5),
+        maxProgress: 5,
+        color: COLORS.primary.blue,
+      },
+      {
+        id: 'dedicated_devotee',
+        icon: '🙏',
+        title: 'Dedicated Devotee',
+        subtitle: 'Complete 500+ counts in a week',
+        category: 'Special',
+        isUnlocked: thisWeekCounts >= 500,
+        progress: Math.min(thisWeekCounts, 500),
+        maxProgress: 500,
+        color: COLORS.primary.green,
+      },
+
+      // LEGENDARY ACHIEVEMENTS (Ultimate Mastery)
+      {
+        id: 'million_counts',
+        icon: '🌠',
+        title: 'Million Count Legend',
+        subtitle: 'Reach 1,000,000 total counts',
+        category: 'Legendary',
+        isUnlocked: totalCounts >= 1000000,
+        progress: Math.min(totalCounts, 1000000),
+        maxProgress: 1000000,
+        color: COLORS.primary.purple,
+      },
+      {
+        id: 'thousand_sessions',
+        icon: '⭐',
+        title: 'Thousand Session Master',
+        subtitle: 'Complete 1,000 sessions',
+        category: 'Legendary',
+        isUnlocked: totalSessions >= 1000,
+        progress: Math.min(totalSessions, 1000),
+        maxProgress: 1000,
+        color: COLORS.primary.blue,
+      },
+      {
+        id: 'hundred_hours',
+        icon: '🌙',
+        title: 'Hundred Hour Devotion',
+        subtitle: 'Spend 100 total hours in sessions',
+        category: 'Legendary',
+        isUnlocked: totalTimeHours >= 100,
+        progress: Math.min(totalTimeHours, 100),
+        maxProgress: 100,
+        color: COLORS.primary.indigo,
+      },
+      {
+        id: 'year_streak',
+        icon: '🌈',
+        title: 'Year-Long Devotion',
+        subtitle: 'Active for 365 consecutive days',
+        category: 'Legendary',
+        isUnlocked: currentStreak >= 365,
+        progress: Math.min(currentStreak, 365),
+        maxProgress: 365,
+        color: COLORS.primary.emerald,
+      },
+    ];
+
+    return achievementList;
+  }, [sessions, counters]);
+
   const renderSessionItem = ({ item }: { item: Session }) => {
     const counter = counters.find(c => c.id === item.counterId);
     
@@ -209,6 +642,97 @@ export default function HistoryScreen() {
     );
   };
 
+  const AchievementBadge = ({ achievement }: { achievement: Achievement }) => {
+    if (!achievement || !achievement.title || !achievement.subtitle) {
+      return null;
+    }
+
+    return (
+      <View style={[
+        styles.achievementBadge,
+        { 
+          backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.white,
+          opacity: achievement.isUnlocked ? 1 : 0.6 
+        }
+      ]}>
+        <View style={[
+          styles.achievementIconContainer,
+          { backgroundColor: achievement.isUnlocked ? achievement.color : COLORS.neutral.gray400 }
+        ]}>
+          <Text style={styles.achievementIcon}>{achievement.icon || '🏆'}</Text>
+        </View>
+        <View style={styles.achievementContent}>
+          <Text style={[
+            styles.achievementTitle,
+            { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }
+          ]}>
+            {achievement.title}
+          </Text>
+          <Text style={[
+            styles.achievementSubtitle,
+            { color: isDark ? COLORS.neutral.gray300 : COLORS.neutral.gray600 }
+          ]}>
+            {achievement.subtitle}
+          </Text>
+          {achievement.progress !== undefined && achievement.maxProgress && achievement.maxProgress > 0 && (
+            <View style={styles.progressContainer}>
+              <View style={[
+                styles.progressBar,
+                { backgroundColor: isDark ? COLORS.neutral.gray600 : COLORS.neutral.gray300 }
+              ]}>
+                <View style={[
+                  styles.progressFill,
+                  { 
+                    width: `${Math.min(100, Math.max(0, (achievement.progress / achievement.maxProgress) * 100))}%`,
+                    backgroundColor: achievement.color 
+                  }
+                ]} />
+              </View>
+              <Text style={[
+                styles.progressText,
+                { color: isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray500 }
+              ]}>
+                {achievement.progress || 0}/{achievement.maxProgress || 0}
+              </Text>
+            </View>
+          )}
+        </View>
+        {achievement.isUnlocked && (
+          <Ionicons name="checkmark-circle" size={24} color={achievement.color || COLORS.primary.green} />
+        )}
+      </View>
+    );
+  };
+
+  const renderAchievementsByCategory = () => {
+    const categories = ['Beginner', 'Intermediate', 'Advanced', 'Expert', 'Special', 'Legendary'];
+    
+    return categories.map(category => {
+      const categoryAchievements = achievements.filter(a => a && a.category === category);
+      const unlockedCount = categoryAchievements.filter(a => a && a.isUnlocked).length;
+      
+      if (categoryAchievements.length === 0) return null;
+      
+      return (
+        <View key={category} style={styles.achievementCategory}>
+          <View style={styles.categoryHeader}>
+            <Text style={[
+              styles.categoryTitle,
+              { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }
+            ]}>
+              {category} ({unlockedCount}/{categoryAchievements.length})
+            </Text>
+          </View>
+          {categoryAchievements
+            .filter(achievement => achievement && achievement.id && achievement.title && achievement.subtitle)
+            .map(achievement => (
+              <AchievementBadge key={achievement.id} achievement={achievement} />
+            ))}
+        </View>
+      );
+    }).filter(Boolean); // Remove any null values
+  };
+
   return (
     <SafeAreaView style={[
       styles.container,
@@ -237,118 +761,179 @@ export default function HistoryScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Statistics Cards */}
-        <View style={styles.statsContainer}>
-          <View style={[
-            styles.statCard,
-            { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.white }
-          ]}>
-            <Text style={[
-              styles.statValue,
-              { color: COLORS.primary.green }
-            ]}>
-              {statistics.totalSessions}
-            </Text>
-            <Text style={[
-              styles.statLabel,
-              { color: isDark ? COLORS.neutral.gray300 : COLORS.neutral.gray600 }
-            ]}>
-              Total Sessions
-            </Text>
-          </View>
-
-          <View style={[
-            styles.statCard,
-            { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.white }
-          ]}>
-            <Text style={[
-              styles.statValue,
-              { color: COLORS.primary.blue }
-            ]}>
-              {statistics.totalCounts.toLocaleString()}
-            </Text>
-            <Text style={[
-              styles.statLabel,
-              { color: isDark ? COLORS.neutral.gray300 : COLORS.neutral.gray600 }
-            ]}>
-              Total Counts
-            </Text>
-          </View>
-
-          <View style={[
-            styles.statCard,
-            { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.white }
-          ]}>
-            <Text style={[
-              styles.statValue,
-              { color: COLORS.primary.purple }
-            ]}>
-              {formatDuration(statistics.totalTime)}
-            </Text>
-            <Text style={[
-              styles.statLabel,
-              { color: isDark ? COLORS.neutral.gray300 : COLORS.neutral.gray600 }
-            ]}>
-              Total Time
-            </Text>
-          </View>
-
-          <View style={[
-            styles.statCard,
-            { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.white }
-          ]}>
-            <Text style={[
-              styles.statValue,
-              { color: COLORS.primary.orange }
-            ]}>
-              {formatDuration(statistics.averageSessionTime)}
-            </Text>
-            <Text style={[
-              styles.statLabel,
-              { color: isDark ? COLORS.neutral.gray300 : COLORS.neutral.gray600 }
-            ]}>
-              Avg Session
-            </Text>
-          </View>
-        </View>
-
-        {/* Sessions List */}
-        <View style={styles.sessionsSection}>
+      {/* View Switcher */}
+      <View style={styles.viewSwitcher}>
+        <TouchableOpacity
+          style={[
+            styles.switcherButton,
+            { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.white },
+            currentView === 'history' && { backgroundColor: COLORS.primary.green }
+          ]}
+          onPress={() => setCurrentView('history')}
+        >
+          <Ionicons 
+            name="time" 
+            size={20} 
+            color={currentView === 'history' ? COLORS.neutral.white : (isDark ? COLORS.neutral.white : COLORS.neutral.gray900)} 
+          />
           <Text style={[
-            styles.sectionTitle,
-            { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }
+            styles.switcherText,
+            { color: currentView === 'history' ? COLORS.neutral.white : (isDark ? COLORS.neutral.white : COLORS.neutral.gray900) }
           ]}>
-            Recent Sessions ({filteredAndSortedSessions.length})
+            History
           </Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={[
+            styles.switcherButton,
+            { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.white },
+            currentView === 'achievements' && { backgroundColor: COLORS.primary.green }
+          ]}
+          onPress={() => setCurrentView('achievements')}
+        >
+          <Ionicons 
+            name="trophy" 
+            size={20} 
+            color={currentView === 'achievements' ? COLORS.neutral.white : (isDark ? COLORS.neutral.white : COLORS.neutral.gray900)} 
+          />
+          <Text style={[
+            styles.switcherText,
+            { color: currentView === 'achievements' ? COLORS.neutral.white : (isDark ? COLORS.neutral.white : COLORS.neutral.gray900) }
+          ]}>
+            Achievements ({achievements.filter(a => a.isUnlocked).length})
+          </Text>
+        </TouchableOpacity>
+      </View>
 
-          {filteredAndSortedSessions.length === 0 ? (
-            <View style={[
-              styles.emptyState,
-              { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.white }
-            ]}>
-              <Ionicons 
-                name="time-outline" 
-                size={48} 
-                color={isDark ? COLORS.neutral.gray500 : COLORS.neutral.gray400} 
-              />
-              <Text style={[
-                styles.emptyStateText,
-                { color: isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray500 }
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {currentView === 'history' ? (
+          <>
+            {/* Statistics Cards */}
+            <View style={styles.statsContainer}>
+              <View style={[
+                styles.statCard,
+                { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.white }
               ]}>
-                No sessions found
+                <Text style={[
+                  styles.statValue,
+                  { color: COLORS.primary.green }
+                ]}>
+                  {statistics.totalSessions}
+                </Text>
+                <Text style={[
+                  styles.statLabel,
+                  { color: isDark ? COLORS.neutral.gray300 : COLORS.neutral.gray600 }
+                ]}>
+                  Total Sessions
+                </Text>
+              </View>
+
+              <View style={[
+                styles.statCard,
+                { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.white }
+              ]}>
+                <Text style={[
+                  styles.statValue,
+                  { color: COLORS.primary.blue }
+                ]}>
+                  {statistics.totalCounts.toLocaleString()}
+                </Text>
+                <Text style={[
+                  styles.statLabel,
+                  { color: isDark ? COLORS.neutral.gray300 : COLORS.neutral.gray600 }
+                ]}>
+                  Total Counts
+                </Text>
+              </View>
+
+              <View style={[
+                styles.statCard,
+                { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.white }
+              ]}>
+                <Text style={[
+                  styles.statValue,
+                  { color: COLORS.primary.purple }
+                ]}>
+                  {formatDuration(statistics.totalTime)}
+                </Text>
+                <Text style={[
+                  styles.statLabel,
+                  { color: isDark ? COLORS.neutral.gray300 : COLORS.neutral.gray600 }
+                ]}>
+                  Total Time
+                </Text>
+              </View>
+
+              <View style={[
+                styles.statCard,
+                { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.white }
+              ]}>
+                <Text style={[
+                  styles.statValue,
+                  { color: COLORS.primary.orange }
+                ]}>
+                  {formatDuration(statistics.averageSessionTime)}
+                </Text>
+                <Text style={[
+                  styles.statLabel,
+                  { color: isDark ? COLORS.neutral.gray300 : COLORS.neutral.gray600 }
+                ]}>
+                  Avg Session
+                </Text>
+              </View>
+            </View>
+
+            {/* Sessions List */}
+            <View style={styles.sessionsSection}>
+              <Text style={[
+                styles.sectionTitle,
+                { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }
+              ]}>
+                Recent Sessions ({filteredAndSortedSessions.length})
+              </Text>
+
+              {filteredAndSortedSessions.length === 0 ? (
+                <View style={[
+                  styles.emptyState,
+                  { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.white }
+                ]}>
+                  <Ionicons 
+                    name="time-outline" 
+                    size={48} 
+                    color={isDark ? COLORS.neutral.gray500 : COLORS.neutral.gray400} 
+                  />
+                  <Text style={[
+                    styles.emptyStateText,
+                    { color: isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray500 }
+                  ]}>
+                    No sessions found
+                  </Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={filteredAndSortedSessions}
+                  renderItem={renderSessionItem}
+                  keyExtractor={(item) => item.id}
+                  scrollEnabled={false}
+                  showsVerticalScrollIndicator={false}
+                />
+              )}
+            </View>
+          </>
+        ) : (
+          <View style={styles.achievementsSection}>
+            <View style={styles.achievementsSummary}>
+              <Text style={[
+                styles.achievementsSummaryText,
+                { color: isDark ? COLORS.neutral.gray300 : COLORS.neutral.gray600 }
+              ]}>
+                {achievements.filter(a => a.isUnlocked).length} of {achievements.length} achievements unlocked
               </Text>
             </View>
-          ) : (
-            <FlatList
-              data={filteredAndSortedSessions}
-              renderItem={renderSessionItem}
-              keyExtractor={(item) => item.id}
-              scrollEnabled={false}
-              showsVerticalScrollIndicator={false}
-            />
-          )}
-        </View>
+            {renderAchievementsByCategory()}
+          </View>
+        )}
       </ScrollView>
 
       {/* Filter Modal */}
@@ -645,5 +1230,111 @@ const styles = StyleSheet.create({
   counterOption: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  // View Switcher Styles
+  viewSwitcher: {
+    flexDirection: 'row',
+    marginHorizontal: 20,
+    marginBottom: 20,
+    borderRadius: 12,
+    backgroundColor: 'transparent',
+    gap: 8,
+  },
+  switcherButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 10,
+    gap: 8,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  switcherText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  // Achievements Styles
+  achievementsSection: {
+    padding: 20,
+  },
+  achievementsSummary: {
+    marginBottom: 20,
+    alignItems: 'center',
+  },
+  achievementsSummaryText: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  achievementCategory: {
+    marginBottom: 30,
+  },
+  categoryHeader: {
+    marginBottom: 15,
+  },
+  categoryTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  achievementBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  achievementIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  achievementIcon: {
+    fontSize: 24,
+  },
+  achievementContent: {
+    flex: 1,
+  },
+  achievementTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  achievementSubtitle: {
+    fontSize: 14,
+    marginBottom: 8,
+  },
+  progressContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  progressBar: {
+    flex: 1,
+    height: 4,
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  progressText: {
+    fontSize: 12,
+    fontWeight: '500',
+    minWidth: 50,
+    textAlign: 'right',
   },
 }); 
