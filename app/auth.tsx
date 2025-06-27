@@ -46,7 +46,7 @@ const LOCKOUT_DURATION = 300000; // 5 minutes
 
 export default function AuthScreen() {
   const { isDark } = useAppTheme();
-  const { signIn, signUp, signInAsGuest, isLoading, error: contextError } = useTasbeeh();
+  const { signIn, signUp, signInAsGuest, isLoading, error: contextError, resendConfirmation } = useTasbeeh();
 
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
@@ -57,6 +57,8 @@ export default function AuthScreen() {
   const [passwordError, setPasswordError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [lastSignupEmail, setLastSignupEmail] = useState<string>('');
+  const [success, setSuccess] = useState<string | null>(null);
 
   // Clear auth error when switching between sign in/up
   useEffect(() => {
@@ -222,9 +224,11 @@ export default function AuthScreen() {
       
       if (isSignUp) {
         // Sign up
+        setLastSignupEmail(sanitizedEmail);
         await signUp(sanitizedEmail, sanitizedPassword);
         // Reset attempts on successful sign up
         authAttempts = 0;
+        setSuccess('Account created! Please check your email for verification.');
       } else {
         // Sign in
         await signIn(sanitizedEmail, sanitizedPassword);
@@ -265,7 +269,8 @@ export default function AuthScreen() {
     validatePassword, 
     sanitizeInput, 
     signIn,
-    signUp
+    signUp,
+    resendConfirmation
   ]);
 
   const handleGuestSignIn = useCallback(async () => {
@@ -305,6 +310,24 @@ export default function AuthScreen() {
       }
     }
   }, [passwordError, validatePassword, isSignUp]);
+
+  const handleResendConfirmation = async () => {
+    if (!lastSignupEmail) {
+      setAuthError('No email to resend to');
+      return;
+    }
+    
+    try {
+      const result = await resendConfirmation(lastSignupEmail);
+      if (result.success) {
+        setSuccess(result.message || 'Confirmation email resent!');
+      } else {
+        setAuthError(result.error || 'Failed to resend email');
+      }
+    } catch (error: any) {
+      setAuthError('Failed to resend confirmation email');
+    }
+  };
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: isDark ? COLORS.neutral.gray900 : COLORS.neutral.gray50 }]}>
@@ -385,27 +408,81 @@ export default function AuthScreen() {
 
             {/* Display auth errors prominently */}
             {authError && (
-              <View style={[styles.errorContainer, { 
-                backgroundColor: authError.includes('Success') || authError.includes('created') || authError.includes('ready') 
-                  ? COLORS.semantic.success + '20' 
-                  : COLORS.semantic.error + '20',
-                borderColor: authError.includes('Success') || authError.includes('created') || authError.includes('ready')
-                  ? COLORS.semantic.success 
-                  : COLORS.semantic.error
-              }]}>
-                <Ionicons 
-                  name={authError.includes('Success') || authError.includes('created') || authError.includes('ready') ? 'checkmark-circle-outline' : 'alert-circle-outline'} 
-                  size={20} 
-                  color={authError.includes('Success') || authError.includes('created') || authError.includes('ready') ? COLORS.semantic.success : COLORS.semantic.error} 
-                />
-                <Text style={[styles.errorContainerText, { 
-                  color: authError.includes('Success') || authError.includes('created') || authError.includes('ready') 
+              <>
+                <View style={[styles.errorContainer, { 
+                  backgroundColor: authError.includes('Success') || authError.includes('created') || authError.includes('ready') 
+                    ? COLORS.semantic.success + '20' 
+                    : COLORS.semantic.error + '20',
+                  borderColor: authError.includes('Success') || authError.includes('created') || authError.includes('ready')
                     ? COLORS.semantic.success 
-                    : COLORS.semantic.error 
+                    : COLORS.semantic.error
                 }]}>
-                  {authError}
-                </Text>
-              </View>
+                  <Ionicons 
+                    name={authError.includes('Success') || authError.includes('created') || authError.includes('ready') ? 'checkmark-circle-outline' : 'alert-circle-outline'} 
+                    size={20} 
+                    color={authError.includes('Success') || authError.includes('created') || authError.includes('ready') ? COLORS.semantic.success : COLORS.semantic.error} 
+                  />
+                  <Text style={[styles.errorContainerText, { 
+                    color: authError.includes('Success') || authError.includes('created') || authError.includes('ready') 
+                      ? COLORS.semantic.success 
+                      : COLORS.semantic.error 
+                  }]}>
+                    {authError}
+                  </Text>
+                </View>
+
+                {/* Show "Sign Up Instead" button for invalid credentials when in sign-in mode */}
+                {!isSignUp && authError.includes('No account with this email exists') && (
+                  <TouchableOpacity 
+                    style={[styles.helpButton, { backgroundColor: COLORS.primary.green + '20', borderColor: COLORS.primary.green }]}
+                    onPress={() => {
+                      setIsSignUp(true);
+                      setAuthError(null);
+                    }}
+                  >
+                    <Ionicons name="person-add-outline" size={16} color={COLORS.primary.green} />
+                    <Text style={[styles.helpButtonText, { color: COLORS.primary.green }]}>
+                      Create Account Instead
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Show "Resend Confirmation" button for unconfirmed email */}
+                {authError.includes('verification email') && email && (
+                  <TouchableOpacity 
+                    style={[styles.helpButton, { backgroundColor: COLORS.primary.blue + '20', borderColor: COLORS.primary.blue }]}
+                    onPress={async () => {
+                      try {
+                        const result = await resendConfirmation(email);
+                        if (result.success) {
+                          setSuccess(result.message || 'Confirmation email resent!');
+                          setAuthError(null);
+                        } else {
+                          setAuthError(result.error || 'Failed to resend email');
+                        }
+                      } catch (error: any) {
+                        setAuthError('Failed to resend confirmation email');
+                      }
+                    }}
+                    disabled={isLoading}
+                  >
+                    <Ionicons name="mail-outline" size={16} color={COLORS.primary.blue} />
+                    <Text style={[styles.helpButtonText, { color: COLORS.primary.blue }]}>
+                      Resend Verification Email
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </>
+            )}
+
+            {success && lastSignupEmail && (
+              <TouchableOpacity 
+                style={styles.resendButton} 
+                onPress={handleResendConfirmation}
+                disabled={isLoading}
+              >
+                <Text style={styles.resendText}>Didn't receive email? Resend</Text>
+              </TouchableOpacity>
             )}
 
             <View style={[
@@ -740,5 +817,49 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
     lineHeight: 18,
+  },
+  resendButton: {
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  resendText: {
+    color: COLORS.primary.green,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  successContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 16,
+    backgroundColor: COLORS.semantic.success + '20',
+    borderColor: COLORS.semantic.success,
+  },
+  successText: {
+    flex: 1,
+    fontSize: 14,
+    marginLeft: 8,
+    lineHeight: 20,
+    color: COLORS.semantic.success,
+  },
+  helpButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  helpButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
   },
 }); 

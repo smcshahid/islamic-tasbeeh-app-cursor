@@ -9,6 +9,15 @@ import { achievementManager, Achievement, UserStats, USER_LEVELS, shouldCheckAch
 import { playCountHaptic, setHapticsEnabled } from '../utils/haptics';
 import { APP_CONSTANTS } from '../constants/app';
 
+// Utility function to generate UUIDs
+const generateUUID = (): string => {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
+
 // Default values
 const DEFAULT_SETTINGS: Settings = {
   theme: 'auto',
@@ -19,7 +28,7 @@ const DEFAULT_SETTINGS: Settings = {
 };
 
 const DEFAULT_COUNTER: Counter = {
-  id: 'default',
+  id: '00000000-0000-4000-8000-000000000000', // Valid UUID for default counter
   name: 'Default',
   count: 0,
   color: COLORS.primary.green,
@@ -230,7 +239,7 @@ export const TasbeehProvider = React.memo(({ children }: { children: React.React
   // Optimized counter actions with useCallback
   const createCounter = useCallback(async (name: string, color?: string, target?: number) => {
     const newCounter: Counter = {
-      id: Date.now().toString(),
+      id: generateUUID(),
       name,
       count: 0,
       target,
@@ -393,7 +402,7 @@ export const TasbeehProvider = React.memo(({ children }: { children: React.React
     if (state.activeSession?.counterId === counterId) return;
 
     const newSession: Session = {
-      id: Date.now().toString(),
+      id: generateUUID(),
       counterId,
       counterName: counter.name,
       startTime: new Date().toISOString(),
@@ -542,6 +551,13 @@ export const TasbeehProvider = React.memo(({ children }: { children: React.React
           lastSyncAt: new Date().toISOString(),
         };
         
+        // Clear any existing user data if switching users
+        if (state.user && state.user.id !== data.user.id) {
+          dispatch({ type: 'SET_COUNTERS', payload: [DEFAULT_COUNTER] });
+          dispatch({ type: 'SET_SESSIONS', payload: [] });
+          dispatch({ type: 'SET_CURRENT_COUNTER', payload: DEFAULT_COUNTER });
+        }
+        
         dispatch({ type: 'SET_USER', payload: newUser });
         
         // Try to load cloud data, but don't fail the sign-in if it doesn't work
@@ -600,6 +616,10 @@ export const TasbeehProvider = React.memo(({ children }: { children: React.React
         
         // Only set user state if they have a session (confirmed) or no confirmation needed
         if (userState?.hasSession || !userState?.needsConfirmation) {
+          // Clear any existing user data and reset to defaults for new user
+          dispatch({ type: 'SET_COUNTERS', payload: [DEFAULT_COUNTER] });
+          dispatch({ type: 'SET_SESSIONS', payload: [] });
+          dispatch({ type: 'SET_CURRENT_COUNTER', payload: DEFAULT_COUNTER });
           dispatch({ type: 'SET_USER', payload: newUser });
           debouncedSave();
         }
@@ -643,7 +663,12 @@ export const TasbeehProvider = React.memo(({ children }: { children: React.React
         return;
       }
       
+      // Clear all user data on sign out
       dispatch({ type: 'SET_USER', payload: null });
+      dispatch({ type: 'SET_COUNTERS', payload: [DEFAULT_COUNTER] });
+      dispatch({ type: 'SET_SESSIONS', payload: [] });
+      dispatch({ type: 'SET_CURRENT_COUNTER', payload: DEFAULT_COUNTER });
+      dispatch({ type: 'SET_ACTIVE_SESSION', payload: null });
       debouncedSave();
     } catch (error) {
       secureLogger.error('Sign out error', error, 'TasbeehContext');
@@ -655,7 +680,7 @@ export const TasbeehProvider = React.memo(({ children }: { children: React.React
 
   const signInAsGuest = useCallback(async () => {
     const guestUser: User = {
-      id: 'guest_' + Date.now(),
+      id: `guest-${generateUUID()}`,
       isGuest: true,
     };
     dispatch({ type: 'SET_USER', payload: guestUser });
@@ -750,8 +775,14 @@ export const TasbeehProvider = React.memo(({ children }: { children: React.React
 
       // Update data if successful
       if (countersResult.data && countersResult.data.length > 0) {
-        dispatch({ type: 'SET_COUNTERS', payload: countersResult.data });
+        // Ensure we always have the default counter available
+        const allCounters = [DEFAULT_COUNTER, ...countersResult.data];
+        dispatch({ type: 'SET_COUNTERS', payload: allCounters });
         dispatch({ type: 'SET_CURRENT_COUNTER', payload: countersResult.data[0] });
+      } else {
+        // If no cloud data, ensure default counter is present
+        dispatch({ type: 'SET_COUNTERS', payload: [DEFAULT_COUNTER] });
+        dispatch({ type: 'SET_CURRENT_COUNTER', payload: DEFAULT_COUNTER });
       }
 
       if (sessionsResult.data && sessionsResult.data.length > 0) {
@@ -786,27 +817,91 @@ export const TasbeehProvider = React.memo(({ children }: { children: React.React
       dispatch({ type: 'SET_ERROR', payload: null });
 
       // Verify current session before attempting sync
-      const { data: { session }, error: sessionError } = await auth.getSession();
+      const sessionResult = await auth.getSession();
+      const { data: { session } = { session: null }, error: sessionError } = sessionResult || {};
       
       if (sessionError || !session?.user) {
-        secureLogger.error('Session verification failed before sync', sessionError, 'TasbeehContext');
+        const errorDetails = {
+          hasError: !!sessionError,
+          errorMessage: sessionError?.message || 'No error object',
+          hasSession: !!session,
+          hasUser: !!session?.user,
+          userId: session?.user?.id || 'none'
+        };
+        
+        secureLogger.error('Session verification failed before sync', errorDetails, 'TasbeehContext');
         dispatch({ type: 'SET_ERROR', payload: 'Authentication expired. Please sign in again.' });
         dispatch({ type: 'SET_USER', payload: null });
         return;
       }
 
-      // Ensure the session user matches our current user
+      // Handle session user mismatch by updating context to match session
       if (session.user.id !== state.user.id) {
-        secureLogger.error('Session user mismatch', { sessionUserId: session.user.id, contextUserId: state.user.id }, 'TasbeehContext');
-        dispatch({ type: 'SET_ERROR', payload: 'Authentication mismatch. Please sign in again.' });
-        dispatch({ type: 'SET_USER', payload: null });
-        return;
+        secureLogger.warn('Session user mismatch detected, updating context to match session', { 
+          sessionUserId: session.user.id, 
+          contextUserId: state.user.id 
+        }, 'TasbeehContext');
+        
+        // Update user in context to match the session
+        const sessionUser: User = {
+          id: session.user.id,
+          email: session.user.email || undefined,
+          isGuest: false,
+          lastSyncAt: undefined,
+        };
+        
+        dispatch({ type: 'SET_USER', payload: sessionUser });
+        
+        // Clear local data that belongs to the previous user
+        dispatch({ type: 'SET_COUNTERS', payload: [DEFAULT_COUNTER] });
+        dispatch({ type: 'SET_SESSIONS', payload: [] });
+        dispatch({ type: 'SET_CURRENT_COUNTER', payload: DEFAULT_COUNTER });
+        
+        // Load data for the correct user
+        try {
+          const [countersResult, sessionsResult] = await Promise.all([
+            database.getCounters(session.user.id),
+            database.getSessions(session.user.id),
+          ]);
+
+          if (countersResult.data && countersResult.data.length > 0) {
+            // Ensure we always have the default counter available
+            const allCounters = [DEFAULT_COUNTER, ...countersResult.data];
+            dispatch({ type: 'SET_COUNTERS', payload: allCounters });
+            dispatch({ type: 'SET_CURRENT_COUNTER', payload: countersResult.data[0] });
+          } else {
+            // If no cloud data, ensure default counter is present
+            dispatch({ type: 'SET_COUNTERS', payload: [DEFAULT_COUNTER] });
+            dispatch({ type: 'SET_CURRENT_COUNTER', payload: DEFAULT_COUNTER });
+          }
+
+          if (sessionsResult.data && sessionsResult.data.length > 0) {
+            dispatch({ type: 'SET_SESSIONS', payload: sessionsResult.data });
+          }
+        } catch (error) {
+          secureLogger.error('Error loading data for corrected user', error, 'TasbeehContext');
+        }
+        
+        debouncedSave();
+        secureLogger.info('Successfully synchronized user context with session', { userId: session.user.id }, 'TasbeehContext');
       }
 
       // Upload local data to cloud with verified session
+      // Filter out default counters and sessions related to default counters
+      const countersToSync = state.counters.filter(c => 
+        c.id !== '00000000-0000-4000-8000-000000000000' && // Exclude default counter
+        c.name !== 'Default' // Additional safety check
+      );
+      
+      const sessionsToSync = state.sessions.filter(s => 
+        s.endTime && // Only completed sessions
+        s.counterId !== '00000000-0000-4000-8000-000000000000' && // Exclude default counter sessions
+        s.counterName !== 'Default' // Additional safety check
+      );
+
       const [countersResult, sessionsResult] = await Promise.all([
-        database.syncCounters(state.counters, state.user.id),
-        database.syncSessions(state.sessions.filter(s => s.endTime), state.user.id), // Only sync completed sessions
+        database.syncCounters(countersToSync, state.user.id),
+        database.syncSessions(sessionsToSync, state.user.id),
       ]);
 
       // Check for authentication errors
@@ -863,23 +958,66 @@ export const TasbeehProvider = React.memo(({ children }: { children: React.React
   // Listen to auth changes
   useEffect(() => {
     const { data: authListener } = auth.onAuthStateChange(async (event, session) => {
-      secureLogger.info(`Auth state changed: ${event}`, session?.user?.id, 'TasbeehContext');
-      
-      if (event === 'SIGNED_IN' && session?.user) {
-        // Only update user state if not already set or different user
-        if (!state.user || state.user.id !== session.user.id) {
-          const newUser: User = {
-            id: session.user.id,
-            email: session.user.email || undefined,
-            isGuest: false,
-            lastSyncAt: new Date().toISOString(),
-          };
-          dispatch({ type: 'SET_USER', payload: newUser });
+      try {
+        const eventInfo = {
+          event,
+          hasSession: !!session,
+          userId: session?.user?.id || 'none',
+          userEmail: session?.user?.email || 'none'
+        };
+        secureLogger.info(`Auth state changed`, eventInfo, 'TasbeehContext');
+        
+        if (event === 'SIGNED_IN' && session?.user) {
+          // Only update user state if not already set or different user
+          if (!state.user || state.user.id !== session.user.id) {
+            const newUser: User = {
+              id: session.user.id,
+              email: session.user.email || undefined,
+              isGuest: false,
+              lastSyncAt: new Date().toISOString(),
+            };
+            
+            // Clear previous user's data if switching users
+            if (state.user && state.user.id !== session.user.id) {
+              secureLogger.info('Switching users, clearing previous data', {
+                previousUserId: state.user.id,
+                newUserId: session.user.id
+              }, 'TasbeehContext');
+              
+              dispatch({ type: 'SET_COUNTERS', payload: [DEFAULT_COUNTER] });
+              dispatch({ type: 'SET_SESSIONS', payload: [] });
+              dispatch({ type: 'SET_CURRENT_COUNTER', payload: DEFAULT_COUNTER });
+              dispatch({ type: 'SET_ACTIVE_SESSION', payload: null });
+            }
+            
+            dispatch({ type: 'SET_USER', payload: newUser });
+            dispatch({ type: 'SET_ERROR', payload: null });
+          }
+        } else if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+          // Clear all user data on sign out
+          secureLogger.info('User signed out, clearing all data', {}, 'TasbeehContext');
+          dispatch({ type: 'SET_USER', payload: null });
+          dispatch({ type: 'SET_COUNTERS', payload: [DEFAULT_COUNTER] });
+          dispatch({ type: 'SET_SESSIONS', payload: [] });
+          dispatch({ type: 'SET_CURRENT_COUNTER', payload: DEFAULT_COUNTER });
+          dispatch({ type: 'SET_ACTIVE_SESSION', payload: null });
+          dispatch({ type: 'SET_ERROR', payload: null });
+        } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+          // Just update the user without clearing data
+          if (state.user && state.user.id === session.user.id) {
+            const updatedUser: User = {
+              ...state.user,
+              email: session.user.email || state.user.email,
+            };
+            dispatch({ type: 'SET_USER', payload: updatedUser });
+          }
         }
-      } else if (event === 'SIGNED_OUT') {
-        // Clear user state
-        dispatch({ type: 'SET_USER', payload: null });
-        dispatch({ type: 'SET_ERROR', payload: null });
+      } catch (error) {
+        secureLogger.error('Error in auth state change handler', {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          event,
+          hasSession: !!session
+        }, 'TasbeehContext');
       }
     });
 
@@ -899,6 +1037,25 @@ export const TasbeehProvider = React.memo(({ children }: { children: React.React
       debouncedSave();
     }
   }, [state, debouncedSave]);
+
+  // Development helper: Resend confirmation email
+  const resendConfirmation = useCallback(async (email: string) => {
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: email
+      });
+      
+      if (!error) {
+        secureLogger.info('Confirmation email resent', { email: email.substring(0, 3) + '***' }, 'TasbeehContext');
+        return { success: true, message: 'Confirmation email resent! Please check your inbox and spam folder.' };
+      }
+      return { success: false, error: error.message };
+    } catch (error: any) {
+      secureLogger.error('Resend confirmation failed', error, 'TasbeehContext');
+      return { success: false, error: error.message };
+    }
+  }, []);
 
   // Memoized context value to prevent unnecessary re-renders
   const contextValue = useMemo<TasbeehContextType>(() => ({
@@ -921,8 +1078,9 @@ export const TasbeehProvider = React.memo(({ children }: { children: React.React
     signOut,
     signInAsGuest,
     getUserStats,
-    getUserRanking,
-    getNextLevelProgress,
+          getUserRanking,
+      getNextLevelProgress,
+      resendConfirmation,
   }), [
     state,
     createCounter,
@@ -943,8 +1101,9 @@ export const TasbeehProvider = React.memo(({ children }: { children: React.React
     signOut,
     signInAsGuest,
     getUserStats,
-    getUserRanking,
-    getNextLevelProgress,
+          getUserRanking,
+      getNextLevelProgress,
+      resendConfirmation,
   ]);
 
   return (

@@ -77,6 +77,7 @@ export interface TasbeehContextType extends AppState {
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   signInAsGuest: () => Promise<void>;
+  resendConfirmation: (email: string) => Promise<{ success: boolean; message?: string; error?: string }>;
   
   // Stats and achievements actions
   getUserStats: () => any; // UserStats type from achievements

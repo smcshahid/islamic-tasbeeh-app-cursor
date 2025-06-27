@@ -382,11 +382,12 @@ export const auth = {
         
         // Enhanced error handling for common Supabase scenarios
         if (error.message?.includes('Invalid login credentials')) {
-          // This could mean wrong password OR unconfirmed email
+          // Return more helpful error message with actionable guidance
           return { 
             data, 
             error: { 
-              message: 'Sign in failed. This could be due to:\n• Incorrect email or password\n• Unconfirmed email address\n\nPlease check your credentials or look for a verification email.' 
+              message: 'Sign in failed. This could be due to:\n\n• No account with this email exists\n• Incorrect password\n• Unconfirmed email address\n\nSolutions:\n• Double-check your email address\n• Try signing up if you don\'t have an account\n• Check your inbox for a verification email\n• Use "Forgot Password" if you have an account',
+              type: 'INVALID_CREDENTIALS'
             } 
           };
         } else if (error.message?.includes('Email not confirmed')) {
