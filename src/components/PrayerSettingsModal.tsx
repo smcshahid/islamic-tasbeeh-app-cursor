@@ -11,7 +11,7 @@ import {
   TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Slider } from '@miblanchard/react-native-slider';
+import Slider from '@react-native-community/slider';
 import { usePrayerTimes } from '../contexts/PrayerTimesContext';
 import { useAppTheme } from '../utils/theme';
 import { COLORS, CalculationMethod, AdhanAudio, City, PrayerName, PRAYER_NAMES } from '../types';
@@ -23,6 +23,7 @@ import {
   previewAudio as previewAudioDirect,
   AudioState 
 } from '../utils/audioService';
+
 
 interface PrayerSettingsModalProps {
   visible: boolean;
@@ -46,7 +47,7 @@ export default function PrayerSettingsModal({ visible, onClose }: PrayerSettings
   const { isDark } = useAppTheme();
   const accessibleColors = accessibilityManager.getAccessibleColors(isDark ? 'dark' : 'light');
 
-  const [activeTab, setActiveTab] = useState<'general' | 'audio' | 'location' | 'notifications'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'location' | 'notifications'>('general');
   const [showMethodPicker, setShowMethodPicker] = useState(false);
   const [showAudioPicker, setShowAudioPicker] = useState(false);
   const [showCityPicker, setShowCityPicker] = useState(false);
@@ -54,6 +55,11 @@ export default function PrayerSettingsModal({ visible, onClose }: PrayerSettings
   
   // Audio state management
   const [audioState, setAudioState] = useState<AudioState>(getAudioState());
+  
+  // Local slider state to prevent continuous updates during drag
+  const [localVolume, setLocalVolume] = useState<number>(typeof settings.volume === 'number' ? settings.volume : 0.7);
+  const [localFadeIn, setLocalFadeIn] = useState<number>(typeof settings.fadeInDuration === 'number' ? settings.fadeInDuration : 2);
+  const [localFadeOut, setLocalFadeOut] = useState<number>(typeof settings.fadeOutDuration === 'number' ? settings.fadeOutDuration : 2);
 
   // Listen to audio state changes
   useEffect(() => {
@@ -68,6 +74,13 @@ export default function PrayerSettingsModal({ visible, onClose }: PrayerSettings
       // Cleanup listener (note: current implementation doesn't return unsubscribe)
     };
   }, []);
+
+  // Sync local state with settings when they change
+  useEffect(() => {
+    setLocalVolume(typeof settings.volume === 'number' ? settings.volume : 0.7);
+    setLocalFadeIn(typeof settings.fadeInDuration === 'number' ? settings.fadeInDuration : 2);
+    setLocalFadeOut(typeof settings.fadeOutDuration === 'number' ? settings.fadeOutDuration : 2);
+  }, [settings.volume, settings.fadeInDuration, settings.fadeOutDuration]);
 
   const filteredCities = availableCities.filter(city =>
     city.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -91,6 +104,8 @@ export default function PrayerSettingsModal({ visible, onClose }: PrayerSettings
       Alert.alert('Error', 'Failed to update audio selection');
     }
   };
+
+
 
   const handleCitySelect = async (city: City) => {
     try {
@@ -132,11 +147,12 @@ export default function PrayerSettingsModal({ visible, onClose }: PrayerSettings
     return audioState.isPlaying && audioState.currentAudio?.id === audio.id;
   };
 
+
+
   const renderTabBar = () => (
     <View style={[styles.tabBar, { backgroundColor: accessibleColors.surface }]}>
       {[
         { key: 'general', label: 'General', icon: 'settings' },
-        { key: 'audio', label: 'Audio', icon: 'volume-high' },
         { key: 'location', label: 'Location', icon: 'location' },
         { key: 'notifications', label: 'Notifications', icon: 'notifications' },
       ].map(tab => (
@@ -283,26 +299,24 @@ export default function PrayerSettingsModal({ visible, onClose }: PrayerSettings
           </>
         )}
       </View>
-    </View>
-  );
 
-  const renderAudioSettings = () => (
-    <View style={styles.tabContent}>
-      {/* Audio Selection */}
+      {/* Audio Settings */}
       <View style={[styles.settingSection, { backgroundColor: accessibleColors.surface }]}>
         <Text style={[styles.sectionTitle, { color: accessibleColors.text }]}>
-          Selected Adhan
+          Audio Settings
         </Text>
+        
+        {/* Audio Selection */}
         <TouchableOpacity
           style={styles.settingRow}
           onPress={() => setShowAudioPicker(true)}
         >
           <View style={styles.settingInfo}>
             <Text style={[styles.settingLabel, { color: accessibleColors.text }]}>
-              {settings.selectedAudio.name}
+              Selected Adhan
             </Text>
             <Text style={[styles.settingDescription, { color: COLORS.neutral.gray500 }]}>
-              {settings.selectedAudio.reciter}
+              {settings.selectedAudio.name} - {settings.selectedAudio.reciter}
               {isCurrentAudioPlaying(settings.selectedAudio) && ' • Playing'}
             </Text>
           </View>
@@ -328,40 +342,39 @@ export default function PrayerSettingsModal({ visible, onClose }: PrayerSettings
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
-      </View>
 
-      {/* Volume Control */}
-      <View style={[styles.settingSection, { backgroundColor: accessibleColors.surface }]}>
-        <Text style={[styles.sectionTitle, { color: accessibleColors.text }]}>
-          Volume: {Math.round(settings.volume * 100)}%
-        </Text>
+        {/* Volume Control */}
+        <View style={styles.settingRow}>
+          <Text style={[styles.settingLabel, { color: accessibleColors.text }]}>
+            Volume: {Math.round(localVolume * 100)}%
+          </Text>
+        </View>
         <View style={styles.sliderContainer}>
           <Ionicons name="volume-low" size={20} color={COLORS.neutral.gray500} />
           <Slider
             style={styles.slider}
             minimumValue={0}
             maximumValue={1}
-            value={settings.volume}
-            onValueChange={(value) => updatePrayerSettings({ volume: value })}
+            value={localVolume}
+            onValueChange={(value) => {
+              const numericValue = Array.isArray(value) ? value[0] : value;
+              setLocalVolume(numericValue);
+            }}
+            onSlidingComplete={(value) => {
+              const numericValue = Array.isArray(value) ? value[0] : value;
+              updatePrayerSettings({ volume: numericValue });
+            }}
             minimumTrackTintColor={COLORS.primary.green}
             maximumTrackTintColor={COLORS.neutral.gray300}
             thumbTintColor={COLORS.primary.green}
-            trackStyle={styles.sliderTrack}
-            thumbStyle={styles.sliderThumb}
           />
           <Ionicons name="volume-high" size={20} color={COLORS.neutral.gray500} />
         </View>
-      </View>
 
-      {/* Fade Effects */}
-      <View style={[styles.settingSection, { backgroundColor: accessibleColors.surface }]}>
-        <Text style={[styles.sectionTitle, { color: accessibleColors.text }]}>
-          Fade Effects
-        </Text>
-        
+        {/* Fade Effects */}
         <View style={styles.settingRow}>
           <Text style={[styles.settingLabel, { color: accessibleColors.text }]}>
-            Fade In: {settings.fadeInDuration}s
+            Fade In: {localFadeIn}s
           </Text>
         </View>
         <View style={styles.sliderContainer}>
@@ -371,20 +384,25 @@ export default function PrayerSettingsModal({ visible, onClose }: PrayerSettings
             minimumValue={0}
             maximumValue={10}
             step={1}
-            value={settings.fadeInDuration}
-            onValueChange={(value) => updatePrayerSettings({ fadeInDuration: Math.round(value) })}
+            value={localFadeIn}
+            onValueChange={(value) => {
+              const numericValue = Array.isArray(value) ? value[0] : value;
+              setLocalFadeIn(Math.round(numericValue));
+            }}
+            onSlidingComplete={(value) => {
+              const numericValue = Array.isArray(value) ? value[0] : value;
+              updatePrayerSettings({ fadeInDuration: Math.round(numericValue) });
+            }}
             minimumTrackTintColor={COLORS.primary.green}
             maximumTrackTintColor={COLORS.neutral.gray300}
             thumbTintColor={COLORS.primary.green}
-            trackStyle={styles.sliderTrack}
-            thumbStyle={styles.sliderThumb}
           />
           <Text style={[styles.sliderLabel, { color: COLORS.neutral.gray500 }]}>10s</Text>
         </View>
 
         <View style={styles.settingRow}>
           <Text style={[styles.settingLabel, { color: accessibleColors.text }]}>
-            Fade Out: {settings.fadeOutDuration}s
+            Fade Out: {localFadeOut}s
           </Text>
         </View>
         <View style={styles.sliderContainer}>
@@ -394,19 +412,26 @@ export default function PrayerSettingsModal({ visible, onClose }: PrayerSettings
             minimumValue={0}
             maximumValue={10}
             step={1}
-            value={settings.fadeOutDuration}
-            onValueChange={(value) => updatePrayerSettings({ fadeOutDuration: Math.round(value) })}
+            value={localFadeOut}
+            onValueChange={(value) => {
+              const numericValue = Array.isArray(value) ? value[0] : value;
+              setLocalFadeOut(Math.round(numericValue));
+            }}
+            onSlidingComplete={(value) => {
+              const numericValue = Array.isArray(value) ? value[0] : value;
+              updatePrayerSettings({ fadeOutDuration: Math.round(numericValue) });
+            }}
             minimumTrackTintColor={COLORS.primary.green}
             maximumTrackTintColor={COLORS.neutral.gray300}
             thumbTintColor={COLORS.primary.green}
-            trackStyle={styles.sliderTrack}
-            thumbStyle={styles.sliderThumb}
           />
           <Text style={[styles.sliderLabel, { color: COLORS.neutral.gray500 }]}>10s</Text>
         </View>
       </View>
     </View>
   );
+
+
 
   const renderLocationSettings = () => (
     <View style={styles.tabContent}>
@@ -549,7 +574,6 @@ export default function PrayerSettingsModal({ visible, onClose }: PrayerSettings
         {/* Content */}
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {activeTab === 'general' && renderGeneralSettings()}
-          {activeTab === 'audio' && renderAudioSettings()}
           {activeTab === 'location' && renderLocationSettings()}
           {activeTab === 'notifications' && renderNotificationSettings()}
         </ScrollView>
@@ -824,24 +848,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
-  previewButton: {
-    padding: 8,
-    marginRight: 8,
-  },
-  audioControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  playButton: {
-    padding: 8,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: COLORS.primary.green,
-    backgroundColor: 'transparent',
-  },
-  playButtonActive: {
-    backgroundColor: COLORS.primary.green,
-  },
+
   locationOption: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -932,8 +939,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
+  audioControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   audioActions: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
+  },
+  previewButton: {
+    padding: 8,
+    borderRadius: 6,
+    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+  },
+  playButton: {
+    padding: 8,
+    borderRadius: 6,
+    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+  },
+  playButtonActive: {
+    backgroundColor: COLORS.primary.green,
   },
 }); 
