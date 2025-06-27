@@ -19,6 +19,7 @@ import { notifications } from '../../src/utils/notifications';
 import storage from '../../src/utils/storage';
 import { COLORS, Counter, ColorKey } from '../../src/types';
 import { SettingsErrorBoundary } from '../../src/components/ErrorBoundary';
+import PrayerSettingsModal from '../../src/components/PrayerSettingsModal';
 import { 
   getButtonA11yProps, 
   getToggleA11yProps,
@@ -53,6 +54,7 @@ export default function SettingsScreen() {
   const [editCounterColor, setEditCounterColor] = useState(COLORS.primary.blue);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [showPrayerSettings, setShowPrayerSettings] = useState(false);
   
   // Accessibility configuration
   const fontScale = getFontScale();
@@ -449,6 +451,13 @@ export default function SettingsScreen() {
           />
 
           <SettingItem
+            icon="time"
+            title="Prayer Times"
+            subtitle="Configure Islamic prayer time settings"
+            onPress={() => setShowPrayerSettings(true)}
+          />
+
+          <SettingItem
             icon="phone-portrait"
             title="Haptic Feedback"
             subtitle="Vibrate when counting"
@@ -763,6 +772,12 @@ export default function SettingsScreen() {
           </ScrollView>
         </SafeAreaView>
       </Modal>
+
+      {/* Prayer Settings Modal */}
+      <PrayerSettingsModal
+        visible={showPrayerSettings}
+        onClose={() => setShowPrayerSettings(false)}
+      />
     </SafeAreaView>
   );
 }

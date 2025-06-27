@@ -3,7 +3,9 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { TasbeehProvider } from '../src/contexts/TasbeehContext';
+import { PrayerTimesProvider } from '../src/contexts/PrayerTimesContext';
 import ErrorBoundary from '../src/components/ErrorBoundary';
+import AudioPlayerComponent from '../src/components/AudioPlayerComponent';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete
 SplashScreen.preventAutoHideAsync();
@@ -21,11 +23,14 @@ export default function RootLayout() {
   return (
     <ErrorBoundary>
       <TasbeehProvider>
-        <StatusBar style="auto" />
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="auth" />
-        </Stack>
+        <PrayerTimesProvider>
+          <AudioPlayerComponent />
+          <StatusBar style="auto" />
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="auth" />
+          </Stack>
+        </PrayerTimesProvider>
       </TasbeehProvider>
     </ErrorBoundary>
   );

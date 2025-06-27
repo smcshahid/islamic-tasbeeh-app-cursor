@@ -43,7 +43,23 @@ export default function TabLayout() {
               accessibilityLabel={`Counter tab${focused ? ', selected' : ''}`}
             />
           ),
-          ...accessibilityManager.getTabAccessibilityProps('Counter', false, 0, 3)
+          ...accessibilityManager.getTabAccessibilityProps('Counter', false, 0, 4)
+        }}
+      />
+      <Tabs.Screen
+        name="prayer-times"
+        options={{
+          title: 'Prayer Times',
+          tabBarAccessibilityLabel: 'Prayer Times tab',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? 'time' : 'time-outline'}
+              size={24}
+              color={color}
+              accessibilityLabel={`Prayer Times tab${focused ? ', selected' : ''}`}
+            />
+          ),
+          ...accessibilityManager.getTabAccessibilityProps('Prayer Times', false, 1, 4)
         }}
       />
       <Tabs.Screen
@@ -53,13 +69,13 @@ export default function TabLayout() {
           tabBarAccessibilityLabel: 'History tab',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
-              name={focused ? 'time' : 'time-outline'}
+              name={focused ? 'library' : 'library-outline'}
               size={24}
               color={color}
               accessibilityLabel={`History tab${focused ? ', selected' : ''}`}
             />
           ),
-          ...accessibilityManager.getTabAccessibilityProps('History', false, 1, 3)
+          ...accessibilityManager.getTabAccessibilityProps('History', false, 2, 4)
         }}
       />
       <Tabs.Screen
@@ -75,7 +91,7 @@ export default function TabLayout() {
               accessibilityLabel={`Settings tab${focused ? ', selected' : ''}`}
             />
           ),
-          ...accessibilityManager.getTabAccessibilityProps('Settings', false, 2, 3)
+          ...accessibilityManager.getTabAccessibilityProps('Settings', false, 3, 4)
         }}
       />
     </Tabs>
