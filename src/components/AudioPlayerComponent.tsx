@@ -24,11 +24,17 @@ export default function AudioPlayerComponent({}: AudioPlayerComponentProps) {
   const player = useAudioPlayer();
   const status = useAudioPlayerStatus(player);
   
+  // Track if we've already handled completion to prevent infinite loops
+  const hasHandledCompletion = useRef(false);
+  
   // Component instance reference
   const componentRef = useRef({
     playAudio: async (audio: AdhanAudio, volume: number = 1.0) => {
       try {
         console.log(`[AudioPlayerComponent] Playing ${audio.name} at volume ${volume}`);
+        
+        // Reset completion tracking for new audio
+        hasHandledCompletion.current = false;
         
         // Update service state
         audioService.updateStateFromPlayer({ 
@@ -75,6 +81,10 @@ export default function AudioPlayerComponent({}: AudioPlayerComponentProps) {
     stopAudio: async () => {
       try {
         console.log('[AudioPlayerComponent] Stopping audio');
+        
+        // Reset completion tracking when manually stopping
+        hasHandledCompletion.current = false;
+        
         player.pause();
         player.seekTo(0);
         
@@ -151,9 +161,11 @@ export default function AudioPlayerComponent({}: AudioPlayerComponentProps) {
         isBuffering: status.isBuffering || false,
       });
 
-      // Handle playback completion
-      if (status.didJustFinish) {
+      // Handle playback completion - only once per audio session
+      if (status.didJustFinish && !hasHandledCompletion.current) {
         console.log('[AudioPlayerComponent] Playback completed');
+        hasHandledCompletion.current = true; // Mark as handled
+        
         audioService.updateStateFromPlayer({
           isPlaying: false,
           currentAudio: undefined,

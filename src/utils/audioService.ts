@@ -185,7 +185,7 @@ class AudioService {
   }
 
   /**
-   * Preview audio (with limited duration)
+   * Preview audio (with limited duration) - for quick preview only
    */
   public async previewAudio(audio: AdhanAudio, duration: number = 10000): Promise<void> {
     try {
@@ -198,6 +198,45 @@ class AudioService {
       }, Math.min(duration, 8000)); // Max 8 seconds for preview
     } catch (error) {
       console.error('[AudioService] Failed to preview audio:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Play audio without timeout (for full playback from settings)
+   */
+  public async playAudioFull(
+    audio: AdhanAudio,
+    volume: number = 1.0,
+    fadeInDuration: number = 3
+  ): Promise<void> {
+    try {
+      console.log(`[AudioService] Playing full audio: ${audio.name} at volume ${volume}`);
+      await this.playAdhan(audio, volume, fadeInDuration);
+    } catch (error) {
+      console.error('[AudioService] Failed to play full audio:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Toggle play/stop - useful for UI buttons
+   */
+  public async togglePlayback(
+    audio: AdhanAudio,
+    volume: number = 1.0,
+    fadeInDuration: number = 3
+  ): Promise<boolean> {
+    try {
+      if (this.audioState.isPlaying) {
+        await this.stopAudio();
+        return false; // Now stopped
+      } else {
+        await this.playAudioFull(audio, volume, fadeInDuration);
+        return true; // Now playing
+      }
+    } catch (error) {
+      console.error('[AudioService] Failed to toggle playback:', error);
       throw error;
     }
   }
@@ -394,6 +433,30 @@ export const stopAdhan = async (fadeOutDuration: number = 0): Promise<void> => {
 
 export const previewAudio = async (audio: AdhanAudio): Promise<void> => {
   return audioService.previewAudio(audio);
+};
+
+export const playAudioFull = async (
+  audio: AdhanAudio,
+  volume: number = 1.0,
+  fadeInDuration: number = 3
+): Promise<void> => {
+  return audioService.playAudioFull(audio, volume, fadeInDuration);
+};
+
+export const togglePlayback = async (
+  audio: AdhanAudio,
+  volume: number = 1.0,
+  fadeInDuration: number = 3
+): Promise<boolean> => {
+  return audioService.togglePlayback(audio, volume, fadeInDuration);
+};
+
+export const getAudioState = (): AudioState => {
+  return audioService.getState();
+};
+
+export const setAudioStateListener = (callback: (state: AudioState) => void): void => {
+  audioService.setOnStateChange(callback);
 };
 
 export const pauseAudio = async (): Promise<void> => {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,13 @@ import { usePrayerTimes } from '../contexts/PrayerTimesContext';
 import { useAppTheme } from '../utils/theme';
 import { COLORS, CalculationMethod, AdhanAudio, City, PrayerName, PRAYER_NAMES } from '../types';
 import { accessibilityManager } from '../utils/accessibility';
+import { 
+  getAudioState, 
+  setAudioStateListener, 
+  togglePlayback, 
+  previewAudio as previewAudioDirect,
+  AudioState 
+} from '../utils/audioService';
 
 interface PrayerSettingsModalProps {
   visible: boolean;
@@ -44,6 +51,23 @@ export default function PrayerSettingsModal({ visible, onClose }: PrayerSettings
   const [showAudioPicker, setShowAudioPicker] = useState(false);
   const [showCityPicker, setShowCityPicker] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // Audio state management
+  const [audioState, setAudioState] = useState<AudioState>(getAudioState());
+
+  // Listen to audio state changes
+  useEffect(() => {
+    const unsubscribe = setAudioStateListener((state: AudioState) => {
+      setAudioState(state);
+    });
+
+    // Get initial state
+    setAudioState(getAudioState());
+
+    return () => {
+      // Cleanup listener (note: current implementation doesn't return unsubscribe)
+    };
+  }, []);
 
   const filteredCities = availableCities.filter(city =>
     city.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -88,10 +112,24 @@ export default function PrayerSettingsModal({ visible, onClose }: PrayerSettings
 
   const handlePreviewAudio = async (audio: AdhanAudio) => {
     try {
-      await previewAudio(audio);
+      await previewAudioDirect(audio);
     } catch (error) {
       Alert.alert('Error', 'Failed to preview audio');
     }
+  };
+
+  const handleTogglePlayback = async (audio: AdhanAudio) => {
+    try {
+      const newState = await togglePlayback(audio, settings.volume, settings.fadeInDuration);
+      // State will be updated through the listener
+    } catch (error) {
+      Alert.alert('Error', 'Failed to control audio playback');
+    }
+  };
+
+  // Check if the current audio is the one being displayed
+  const isCurrentAudioPlaying = (audio: AdhanAudio) => {
+    return audioState.isPlaying && audioState.currentAudio?.id === audio.id;
   };
 
   const renderTabBar = () => (
@@ -265,14 +303,30 @@ export default function PrayerSettingsModal({ visible, onClose }: PrayerSettings
             </Text>
             <Text style={[styles.settingDescription, { color: COLORS.neutral.gray500 }]}>
               {settings.selectedAudio.reciter}
+              {isCurrentAudioPlaying(settings.selectedAudio) && ' • Playing'}
             </Text>
           </View>
-          <TouchableOpacity
-            style={styles.previewButton}
-            onPress={() => handlePreviewAudio(settings.selectedAudio)}
-          >
-            <Ionicons name="play" size={16} color={COLORS.primary.green} />
-          </TouchableOpacity>
+          <View style={styles.audioControls}>
+            <TouchableOpacity
+              style={[styles.previewButton, { marginRight: 8 }]}
+              onPress={() => handlePreviewAudio(settings.selectedAudio)}
+            >
+              <Ionicons name="play-skip-forward" size={14} color={COLORS.neutral.gray600} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.playButton,
+                isCurrentAudioPlaying(settings.selectedAudio) && styles.playButtonActive
+              ]}
+              onPress={() => handleTogglePlayback(settings.selectedAudio)}
+            >
+              <Ionicons 
+                name={isCurrentAudioPlaying(settings.selectedAudio) ? "stop" : "play"} 
+                size={16} 
+                color={isCurrentAudioPlaying(settings.selectedAudio) ? COLORS.neutral.white : COLORS.primary.green} 
+              />
+            </TouchableOpacity>
+          </View>
         </TouchableOpacity>
       </View>
 
@@ -773,6 +827,20 @@ const styles = StyleSheet.create({
   previewButton: {
     padding: 8,
     marginRight: 8,
+  },
+  audioControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  playButton: {
+    padding: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: COLORS.primary.green,
+    backgroundColor: 'transparent',
+  },
+  playButtonActive: {
+    backgroundColor: COLORS.primary.green,
   },
   locationOption: {
     flexDirection: 'row',

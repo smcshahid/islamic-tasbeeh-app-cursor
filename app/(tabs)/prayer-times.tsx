@@ -18,6 +18,12 @@ import { COLORS, PrayerName, PRAYER_NAMES } from '../../src/types';
 import { accessibilityManager } from '../../src/utils/accessibility';
 import PrayerSettingsModal from '../../src/components/PrayerSettingsModal';
 import { PrayerTimesErrorBoundary } from '../../src/components/PrayerTimesErrorBoundary';
+import { 
+  getAudioState, 
+  setAudioStateListener, 
+  togglePlayback,
+  AudioState 
+} from '../../src/utils/audioService';
 
 const { width } = Dimensions.get('window');
 
@@ -40,9 +46,25 @@ function PrayerTimesScreenContent() {
   const [selectedDate, setSelectedDate] = useState<string>(
     new Date().toISOString().split('T')[0]
   );
-  const [isPlaying, setIsPlaying] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const lastFetchedDate = useRef<string | null>(null);
+  
+  // Audio state management
+  const [audioState, setAudioState] = useState<AudioState>(getAudioState());
+
+  // Listen to audio state changes
+  useEffect(() => {
+    const unsubscribe = setAudioStateListener((state: AudioState) => {
+      setAudioState(state);
+    });
+
+    // Get initial state
+    setAudioState(getAudioState());
+
+    return () => {
+      // Cleanup listener (note: current implementation doesn't return unsubscribe)
+    };
+  }, []);
 
   const accessibleColors = accessibilityManager.getAccessibleColors(isDark ? 'dark' : 'light');
 
@@ -151,17 +173,10 @@ function PrayerTimesScreenContent() {
 
   const handlePlayAdhan = async () => {
     try {
-      if (isPlaying) {
-        await stopAdhan();
-        setIsPlaying(false);
-      } else {
-        await playAdhan(settings.selectedAudio, settings.volume, settings.fadeInDuration);
-        setIsPlaying(true);
-        // Auto-stop after duration (would be handled by audio service)
-        setTimeout(() => setIsPlaying(false), settings.selectedAudio.duration * 1000);
-      }
+      await togglePlayback(settings.selectedAudio, settings.volume, settings.fadeInDuration);
+      // State will be updated through the audio state listener
     } catch (error) {
-      Alert.alert('Error', 'Failed to play Adhan');
+      Alert.alert('Error', 'Failed to control Adhan playback');
     }
   };
 
@@ -438,19 +453,24 @@ function PrayerTimesScreenContent() {
           <TouchableOpacity
             style={[
               styles.audioButton,
-              { backgroundColor: isPlaying ? COLORS.semantic.error : COLORS.primary.green },
+              { backgroundColor: audioState.isPlaying ? COLORS.semantic.error : COLORS.primary.green },
             ]}
             onPress={handlePlayAdhan}
-            accessibilityLabel={isPlaying ? 'Stop Adhan' : 'Play Adhan'}
+            accessibilityLabel={audioState.isPlaying ? 'Stop Adhan' : 'Play Adhan'}
           >
             <Ionicons
-              name={isPlaying ? 'stop' : 'play'}
+              name={audioState.isPlaying ? 'stop' : 'play'}
               size={24}
               color={COLORS.neutral.white}
             />
             <Text style={styles.audioButtonText}>
-              {isPlaying ? 'Stop Adhan' : 'Play Adhan'}
+              {audioState.isPlaying ? 'Stop Adhan' : 'Play Adhan'}
             </Text>
+            {audioState.currentAudio && (
+              <Text style={styles.audioButtonSubtext}>
+                {audioState.currentAudio.name}
+              </Text>
+            )}
           </TouchableOpacity>
         </View>
       )}
@@ -701,6 +721,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,
+  },
+  audioButtonSubtext: {
+    color: COLORS.neutral.gray200,
+    fontSize: 12,
+    marginLeft: 8,
+    marginTop: 2,
   },
   errorContainer: {
     flex: 1,
