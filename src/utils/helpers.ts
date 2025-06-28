@@ -182,6 +182,111 @@ export const getStorageKey = (key: string): string => {
   return `tasbeeh_${key}`;
 };
 
+/**
+ * Format time based on user's preferred time format
+ * @param time - Time in HH:MM format (24-hour)
+ * @param format - '12h' for AM/PM format, '24h' for 24-hour format
+ * @returns Formatted time string
+ */
+export const formatTime = (time: string, format: '12h' | '24h' = '24h'): string => {
+  if (format === '24h') {
+    return time; // Already in 24-hour format
+  }
+
+  // Convert to 12-hour format
+  const [hours, minutes] = time.split(':').map(Number);
+  
+  if (hours === 0) {
+    return `12:${minutes.toString().padStart(2, '0')} AM`;
+  } else if (hours < 12) {
+    return `${hours}:${minutes.toString().padStart(2, '0')} AM`;
+  } else if (hours === 12) {
+    return `12:${minutes.toString().padStart(2, '0')} PM`;
+  } else {
+    return `${hours - 12}:${minutes.toString().padStart(2, '0')} PM`;
+  }
+};
+
+/**
+ * Adjust time by a number of minutes
+ * @param time - Time in HH:MM format
+ * @param minutes - Minutes to adjust (+/-)
+ * @returns Adjusted time in HH:MM format
+ */
+export const adjustTime = (time: string, minutes: number): string => {
+  const [hours, mins] = time.split(':').map(Number);
+  
+  // Apply adjustment
+  const totalMinutes = hours * 60 + mins + minutes;
+  
+  // Handle day overflow/underflow
+  let adjustedMinutes = totalMinutes % (24 * 60);
+  if (adjustedMinutes < 0) {
+    adjustedMinutes += 24 * 60;
+  }
+  
+  const adjustedHours = Math.floor(adjustedMinutes / 60);
+  const finalMinutes = adjustedMinutes % 60;
+  
+  return `${adjustedHours.toString().padStart(2, '0')}:${finalMinutes.toString().padStart(2, '0')}`;
+};
+
+/**
+ * Format prayer time with adjustments applied
+ * @param time - Original time in HH:MM format
+ * @param adjustment - Minutes to adjust (+/-)
+ * @param format - Time format preference
+ * @returns Formatted adjusted time
+ */
+export const formatAdjustedTime = (
+  time: string, 
+  adjustment: number = 0, 
+  format: '12h' | '24h' = '24h'
+): string => {
+  const [hours, minutes] = time.split(':').map(Number);
+  
+  // Apply adjustment
+  const totalMinutes = hours * 60 + minutes + adjustment;
+  
+  // Handle day overflow/underflow
+  let adjustedMinutes = totalMinutes % (24 * 60);
+  if (adjustedMinutes < 0) {
+    adjustedMinutes += 24 * 60;
+  }
+  
+  const adjustedHours = Math.floor(adjustedMinutes / 60);
+  const finalMinutes = adjustedMinutes % 60;
+  
+  const adjustedTime = `${adjustedHours.toString().padStart(2, '0')}:${finalMinutes.toString().padStart(2, '0')}`;
+  
+  return formatTime(adjustedTime, format);
+};
+
+/**
+ * Get display time for prayer with format preference
+ * @param prayer - Prayer time object
+ * @param format - Time format preference
+ * @returns Object with formatted original and adjusted times
+ */
+export const getPrayerDisplayTime = (
+  prayer: { time: string; adjustment: number },
+  format: '12h' | '24h' = '24h'
+) => {
+  const originalTime = formatTime(prayer.time, format);
+  const adjustedTime = formatAdjustedTime(prayer.time, prayer.adjustment, format);
+  const hasAdjustment = prayer.adjustment !== 0;
+  
+  return {
+    originalTime,
+    adjustedTime,
+    displayTime: hasAdjustment ? adjustedTime : originalTime,
+    hasAdjustment,
+    adjustmentText: hasAdjustment 
+      ? `(${prayer.adjustment > 0 ? '+' : ''}${prayer.adjustment} min)` 
+      : ''
+  };
+};
+
 export default {
   formatDuration,
   formatDate,
@@ -198,4 +303,8 @@ export default {
   isToday,
   isThisWeek,
   getStorageKey,
+  formatTime,
+  formatAdjustedTime,
+  getPrayerDisplayTime,
+  adjustTime,
 }; 

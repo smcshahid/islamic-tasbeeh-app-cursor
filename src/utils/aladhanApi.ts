@@ -2,201 +2,10 @@ import NetInfo from '@react-native-community/netinfo';
 import { secureLogger } from './secureLogger';
 import { PrayerName, DayPrayerTimes, PrayerTime, CalculationMethod, City } from '../types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SAMPLE_PRAYER_DATA, getSamplePrayerTimes, getDefaultDemoDate, isDateInSampleRange } from './sampleDataHandler';
 
 // Development mode configuration
 const USE_SAMPLE_DATA = true; // Set to false for production API calls
-
-// Sample data for development/testing
-const SAMPLE_API_RESPONSE = {
-  "code": 200,
-  "status": "OK",
-  "data": [
-    {
-      "timings": {
-        "Fajr": "06:06 (UTC)",
-        "Sunrise": "08:11 (UTC)",
-        "Dhuhr": "12:11 (UTC)",
-        "Asr": "13:54 (UTC)",
-        "Sunset": "16:03 (UTC)",
-        "Maghrib": "16:02 (UTC)",
-        "Isha": "18:07 (UTC)",
-        "Imsak": "05:58 (UTC)",
-        "Midnight": "23:58 (UTC)",
-        "Firstthird": "21:24 (UTC)",
-        "Lastthird": "02:45 (UTC)"
-      },
-      "date": {
-        "readable": "01 Jan 2025",
-        "timestamp": "1735722061",
-        "gregorian": {
-          "date": "01-01-2025",
-          "format": "DD-MM-YYYY",
-          "day": "01",
-          "weekday": {
-            "en": "Wednesday"
-          },
-          "month": {
-            "number": 1,
-            "en": "January"
-          },
-          "year": "2025",
-          "designation": {
-            "abbreviated": "AD",
-            "expanded": "Anno Domini"
-          },
-          "lunarSighting": false
-        },
-        "hijri": {
-          "date": "01-07-1446",
-          "format": "DD-MM-YYYY",
-          "day": "1",
-          "weekday": {
-            "en": "Al Arba'a",
-            "ar": "الاربعاء"
-          },
-          "month": {
-            "number": 7,
-            "en": "Rajab",
-            "ar": "رَجَب",
-            "days": 30
-          },
-          "year": "1446",
-          "designation": {
-            "abbreviated": "AH",
-            "expanded": "Anno Hegirae"
-          },
-          "holidays": [
-            "Beginning of the holy months"
-          ],
-          "adjustedHolidays": [],
-          "method": "UAQ"
-        }
-      },
-      "meta": {
-        "latitude": 51.5194682,
-        "longitude": -0.1360365,
-        "timezone": "UTC",
-        "method": {
-          "id": 3,
-          "name": "Muslim World League",
-          "params": {
-            "Fajr": 18,
-            "Isha": 17
-          },
-          "location": {
-            "latitude": 51.5194682,
-            "longitude": -0.1360365
-          }
-        },
-        "latitudeAdjustmentMethod": "ANGLE_BASED",
-        "midnightMode": "STANDARD",
-        "school": "STANDARD",
-        "offset": {
-          "Imsak": "5",
-          "Fajr": "3",
-          "Sunrise": "5",
-          "Dhuhr": "7",
-          "Asr": "9",
-          "Maghrib": "-1",
-          "Sunset": 0,
-          "Isha": "8",
-          "Midnight": "-6"
-        }
-      }
-    },
-    {
-      "timings": {
-        "Fajr": "06:06 (UTC)",
-        "Sunrise": "08:11 (UTC)",
-        "Dhuhr": "12:12 (UTC)",
-        "Asr": "13:54 (UTC)",
-        "Sunset": "16:04 (UTC)",
-        "Maghrib": "16:03 (UTC)",
-        "Isha": "18:08 (UTC)",
-        "Imsak": "05:58 (UTC)",
-        "Midnight": "23:59 (UTC)",
-        "Firstthird": "21:24 (UTC)",
-        "Lastthird": "02:45 (UTC)"
-      },
-      "date": {
-        "readable": "02 Jan 2025",
-        "timestamp": "1735808461",
-        "gregorian": {
-          "date": "02-01-2025",
-          "format": "DD-MM-YYYY",
-          "day": "02",
-          "weekday": {
-            "en": "Thursday"
-          },
-          "month": {
-            "number": 1,
-            "en": "January"
-          },
-          "year": "2025",
-          "designation": {
-            "abbreviated": "AD",
-            "expanded": "Anno Domini"
-          },
-          "lunarSighting": false
-        },
-        "hijri": {
-          "date": "02-07-1446",
-          "format": "DD-MM-YYYY",
-          "day": "2",
-          "weekday": {
-            "en": "Al Khamees",
-            "ar": "الخميس"
-          },
-          "month": {
-            "number": 7,
-            "en": "Rajab",
-            "ar": "رَجَب",
-            "days": 30
-          },
-          "year": "1446",
-          "designation": {
-            "abbreviated": "AH",
-            "expanded": "Anno Hegirae"
-          },
-          "holidays": [],
-          "adjustedHolidays": [],
-          "method": "UAQ"
-        }
-      },
-      "meta": {
-        "latitude": 51.5194682,
-        "longitude": -0.1360365,
-        "timezone": "UTC",
-        "method": {
-          "id": 3,
-          "name": "Muslim World League",
-          "params": {
-            "Fajr": 18,
-            "Isha": 17
-          },
-          "location": {
-            "latitude": 51.5194682,
-            "longitude": -0.1360365
-          }
-        },
-        "latitudeAdjustmentMethod": "ANGLE_BASED",
-        "midnightMode": "STANDARD",
-        "school": "STANDARD",
-        "offset": {
-          "Imsak": "5",
-          "Fajr": "3",
-          "Sunrise": "5",
-          "Dhuhr": "7",
-          "Asr": "9",
-          "Maghrib": "-1",
-          "Sunset": 0,
-          "Isha": "8",
-          "Midnight": "-6"
-        }
-      }
-    }
-  ]
-};
 
 // Aladhan API base URL
 const ALADHAN_BASE_URL = 'https://api.aladhan.com/v1';
@@ -354,6 +163,30 @@ export class AladhanApiService {
     method: number = 2, // Default to ISNA
     adjustment?: { [key in PrayerName]?: number }
   ): Promise<DayPrayerTimes> {
+    // Use sample data if enabled
+    if (USE_SAMPLE_DATA) {
+      secureLogger.info('Using sample data for prayer times', { date });
+      const sampleData = getSamplePrayerTimes(date);
+      if (sampleData) {
+        // Apply adjustments if provided
+        if (adjustment) {
+          sampleData.prayers = sampleData.prayers.map(prayer => {
+            const adjustmentValue = adjustment[prayer.name] || 0;
+            return {
+              ...prayer,
+              adjustment: adjustmentValue,
+              time: adjustmentValue !== 0 
+                ? this.adjustTime(prayer.originalTime, adjustmentValue)
+                : prayer.originalTime,
+            };
+          });
+        }
+        return sampleData;
+      }
+      // If no sample data for this date, fall back to API
+      secureLogger.warn('No sample data found for date, falling back to API', { date });
+    }
+
     if (!this.isOnline) {
       throw new Error('No internet connection available');
     }
@@ -807,50 +640,22 @@ interface ApiResponse {
   }[];
 }
 
-// Generate sample data for a full month based on the provided sample
-function generateSampleMonthData(year: number, month: number): ApiResponse {
+// Generate sample data for a full month using the improved sample data handler
+function generateSampleMonthData(year: number, month: number): DayPrayerTimes[] {
   const daysInMonth = new Date(year, month, 0).getDate();
-  const data = [];
+  const result: DayPrayerTimes[] = [];
   
   for (let day = 1; day <= daysInMonth; day++) {
-    const date = new Date(year, month - 1, day);
-    const dayData = {
-      ...SAMPLE_API_RESPONSE.data[0],
-      date: {
-        ...SAMPLE_API_RESPONSE.data[0].date,
-        readable: date.toLocaleDateString('en-GB', { 
-          day: '2-digit', 
-          month: 'short', 
-          year: 'numeric' 
-        }),
-        timestamp: (date.getTime() / 1000).toString(),
-        gregorian: {
-          ...SAMPLE_API_RESPONSE.data[0].date.gregorian,
-          date: date.toLocaleDateString('en-GB', { 
-            day: '2-digit', 
-            month: '2-digit', 
-            year: 'numeric' 
-          }).split('/').reverse().join('-'),
-          day: day.toString().padStart(2, '0'),
-          weekday: {
-            en: date.toLocaleDateString('en-US', { weekday: 'long' })
-          },
-          month: {
-            number: month,
-            en: date.toLocaleDateString('en-US', { month: 'long' })
-          },
-          year: year.toString()
-        }
-      }
-    };
-    data.push(dayData);
+    const targetDate = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+    
+    // Get sample data (now includes fallback logic internally)
+    const sampleData = getSamplePrayerTimes(targetDate);
+    if (sampleData) {
+      result.push(sampleData);
+    }
   }
   
-  return {
-    code: 200,
-    status: 'OK',
-    data
-  };
+  return result;
 }
 
 const validateApiResponse = (data: any): boolean => {
@@ -996,8 +801,7 @@ export const fetchMonthlyPrayerTimes = async (
     // Simulate network delay
     await new Promise(resolve => setTimeout(resolve, 500));
     
-    const sampleResponse = generateSampleMonthData(targetYear, targetMonth);
-    const transformedData = transformApiResponse(sampleResponse.data, location, method);
+    const transformedData = generateSampleMonthData(targetYear, targetMonth);
     
     // Cache the sample data
     try {

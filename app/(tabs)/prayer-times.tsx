@@ -18,8 +18,10 @@ import { usePrayerTimes } from '../../src/contexts/PrayerTimesContext';
 import { useAppTheme } from '../../src/utils/theme';
 import { COLORS, PrayerName, PRAYER_NAMES } from '../../src/types';
 import { accessibilityManager } from '../../src/utils/accessibility';
+import { getPrayerDisplayTime } from '../../src/utils/helpers';
 import PrayerSettingsModal from '../../src/components/PrayerSettingsModal';
 import { PrayerTimesErrorBoundary } from '../../src/components/PrayerTimesErrorBoundary';
+import { PrayerTimeAdjustmentModal } from '../../src/components/PrayerTimeAdjustmentModal';
 
 
 const { width } = Dimensions.get('window');
@@ -27,6 +29,7 @@ const { width } = Dimensions.get('window');
 function PrayerTimesScreenContent() {
   const {
     currentTimes,
+    currentDate,
     isLoading,
     error,
     nextPrayer,
@@ -35,55 +38,61 @@ function PrayerTimesScreenContent() {
     availableAudios,
     fetchPrayerTimes,
     updatePrayerAdjustment,
+    applyAllAdjustments,
     updatePrayerSettings,
     updateAdhanAudio,
     togglePrayerNotification,
     playAdhan,
     stopAdhan,
+    navigateToDate: contextNavigateToDate,
+    getInitialDate,
   } = usePrayerTimes();
 
   const { isDark } = useAppTheme();
-  const [selectedDate, setSelectedDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
-  );
   const [showSettings, setShowSettings] = useState(false);
-  const lastFetchedDate = useRef<string | null>(null);
+  const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
+  const [selectedPrayerForAdjustment, setSelectedPrayerForAdjustment] = useState<PrayerName | null>(null);
 
-  const accessibleColors = accessibilityManager.getAccessibleColors(isDark ? 'dark' : 'light');
-
-  useEffect(() => {
-    // Load prayer times for the selected date when it changes
-    if (selectedDate && selectedDate !== lastFetchedDate.current) {
-      lastFetchedDate.current = selectedDate;
-      fetchPrayerTimes(selectedDate);
-    }
-  }, [selectedDate]);
-
-  const navigateToDate = (direction: 'prev' | 'next') => {
-    const currentDate = new Date(selectedDate);
-    if (direction === 'prev') {
-      currentDate.setDate(currentDate.getDate() - 1);
-    } else {
-      currentDate.setDate(currentDate.getDate() + 1);
-    }
-    setSelectedDate(currentDate.toISOString().split('T')[0]);
+  const accessibleColors = {
+    ...accessibilityManager.getAccessibleColors(isDark ? 'dark' : 'light'),
+    text: accessibilityManager.getAccessibleColors(isDark ? 'dark' : 'light').primaryText
   };
 
-  const goToToday = () => {
-    setSelectedDate(new Date().toISOString().split('T')[0]);
+  const navigateToDate = async (direction: 'prev' | 'next') => {
+    const dateObj = new Date(currentDate);
+    if (direction === 'prev') {
+      dateObj.setDate(dateObj.getDate() - 1);
+    } else {
+      dateObj.setDate(dateObj.getDate() + 1);
+    }
+    const targetDate = dateObj.toISOString().split('T')[0];
+    
+    // Use context navigation for validation
+    await contextNavigateToDate(targetDate);
+    // Context will handle updating currentDate and showing any error messages
+  };
+
+  const goToToday = async () => {
+    const todayDate = getInitialDate(); // Use initial date instead of actual today
+    await contextNavigateToDate(todayDate);
+    // Context will handle updating currentDate
   };
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    const today = new Date().toISOString().split('T')[0];
-    const tomorrow = new Date();
+    const currentDemoDate = getInitialDate(); // Get today's mapped demo date
+    const currentDemoDateObj = new Date(currentDemoDate);
+    
+    const tomorrow = new Date(currentDemoDateObj);
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowString = tomorrow.toISOString().split('T')[0];
-    const yesterday = new Date();
+    
+    const yesterday = new Date(currentDemoDateObj);
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayString = yesterday.toISOString().split('T')[0];
 
-    if (dateString === today) return 'Today';
+    // For sample data mode, show relative dates based on real current date
+    if (dateString === currentDemoDate) return 'Today';
     if (dateString === tomorrowString) return 'Tomorrow';
     if (dateString === yesterdayString) return 'Yesterday';
 
@@ -91,6 +100,7 @@ function PrayerTimesScreenContent() {
       weekday: 'long',
       month: 'short',
       day: 'numeric',
+      year: 'numeric',
     });
   };
 
@@ -121,47 +131,37 @@ function PrayerTimesScreenContent() {
   };
 
   const showTimeAdjustmentDialog = (prayer: PrayerName) => {
-    const currentAdjustment = settings.timeAdjustments[prayer];
-    
-    Alert.prompt(
-      'Adjust Prayer Time',
-      `Enter adjustment in minutes (-30 to +30)\nCurrent: ${currentAdjustment} minutes`,
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Set',
-          onPress: (value) => {
-            if (value) {
-              const minutes = parseInt(value, 10);
-              if (!isNaN(minutes) && minutes >= -30 && minutes <= 30) {
-                updatePrayerAdjustment(prayer, minutes);
-              } else {
-                Alert.alert('Invalid Input', 'Please enter a number between -30 and 30');
-              }
-            }
-          },
-        },
-      ],
-      'plain-text',
-      currentAdjustment.toString()
-    );
+    setSelectedPrayerForAdjustment(prayer);
+    setShowAdjustmentModal(true);
+  };
+
+  const handleAdjustmentConfirm = (minutes: number) => {
+    if (selectedPrayerForAdjustment) {
+      updatePrayerAdjustment(selectedPrayerForAdjustment, minutes);
+    }
+  };
+
+  const handleAdjustmentConfirmAll = (minutes: number) => {
+    applyAllAdjustments(minutes);
+  };
+
+  const handleAdjustmentModalClose = () => {
+    setShowAdjustmentModal(false);
+    setSelectedPrayerForAdjustment(null);
   };
 
 
 
   const handleRefresh = () => {
-    fetchPrayerTimes(selectedDate, true);
+    fetchPrayerTimes(currentDate, true);
   };
 
   const getPrayerTimeStatus = (prayer: PrayerName, time: string) => {
     const now = new Date();
-    const today = new Date().toISOString().split('T')[0];
+    const todayMappedDate = getInitialDate(); // Get today's mapped date
     
-    // Only show status for today
-    if (selectedDate !== today) return null;
+    // Only show status for today's date
+    if (currentDate !== todayMappedDate) return null;
 
     const [hours, minutes] = time.split(':').map(Number);
     const prayerTime = new Date();
@@ -201,7 +201,27 @@ function PrayerTimesScreenContent() {
     }
   };
 
-  if (error) {
+  // Handle remaining error cases (not navigation errors, which are now handled in context)
+  useEffect(() => {
+    if (error && currentTimes) {
+      // Only handle non-navigation errors here since navigation errors are now handled in context with alerts
+      if (!error.includes('Navigation failed') && !error.includes('Demo Limitation') && !error.includes('Month Not Available')) {
+        if (error.includes('currently unavailable')) {
+          Alert.alert(
+            'Data Unavailable',
+            error,
+            [
+              { text: 'OK' },
+              { text: 'Retry', onPress: () => fetchPrayerTimes(currentDate, true) }
+            ]
+          );
+        }
+      }
+    }
+  }, [error, currentTimes, fetchPrayerTimes, currentDate]);
+
+  // Only show full-screen error if we have no prayer times at all
+  if (error && !currentTimes) {
     return (
       <View style={[styles.container, { backgroundColor: accessibleColors.background }]}>
         <StatusBar style={isDark ? 'light' : 'dark'} />
@@ -212,7 +232,7 @@ function PrayerTimesScreenContent() {
           </Text>
           <TouchableOpacity
             style={[styles.retryButton, { backgroundColor: COLORS.primary.green }]}
-            onPress={() => fetchPrayerTimes(selectedDate, true)}
+            onPress={() => fetchPrayerTimes(currentDate, true)}
           >
             <Text style={styles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
@@ -241,7 +261,7 @@ function PrayerTimesScreenContent() {
             </TouchableOpacity>
 
             <View style={styles.dateContainer}>
-              <Text style={styles.dateText}>{formatDate(selectedDate)}</Text>
+              <Text style={styles.dateText}>{formatDate(currentDate)}</Text>
               {currentTimes && (
                 <Text style={styles.hijriDateText}>
                   {formatHijriDate(currentTimes.hijriDate)}
@@ -262,7 +282,7 @@ function PrayerTimesScreenContent() {
             <TouchableOpacity
               style={styles.todayButton}
               onPress={goToToday}
-              accessibilityLabel="Go to today"
+              accessibilityLabel="Go to today's date"
             >
               <Text style={styles.todayButtonText}>Today</Text>
             </TouchableOpacity>
@@ -295,7 +315,7 @@ function PrayerTimesScreenContent() {
       </LinearGradient>
 
       {/* Next Prayer Info */}
-      {nextPrayer && selectedDate === new Date().toISOString().split('T')[0] && (
+      {nextPrayer && (
         <View style={[styles.nextPrayerContainer, { backgroundColor: accessibleColors.surface }]}>
           <View style={styles.nextPrayerContent}>
             <View>
@@ -308,7 +328,7 @@ function PrayerTimesScreenContent() {
             </View>
             <View style={styles.nextPrayerTime}>
               <Text style={[styles.nextPrayerTimeText, { color: COLORS.primary.green }]}>
-                {nextPrayer.time}
+                {getPrayerDisplayTime({time: nextPrayer.time, adjustment: 0}, settings.timeFormat).displayTime}
               </Text>
               <Text style={[styles.nextPrayerCountdown, { color: COLORS.neutral.gray500 }]}>
                 in {nextPrayer.timeUntil}
@@ -363,7 +383,7 @@ function PrayerTimesScreenContent() {
                     
                     <View style={styles.prayerDetails}>
                       <Text style={[styles.prayerTime, { color: statusColor }]}>
-                        {prayer.time}
+                        {getPrayerDisplayTime(prayer, settings.timeFormat).displayTime}
                       </Text>
                       
                       <View style={styles.prayerIndicators}>
@@ -427,6 +447,18 @@ function PrayerTimesScreenContent() {
         onClose={() => setShowSettings(false)}
       />
 
+      {/* Prayer Time Adjustment Modal */}
+      {selectedPrayerForAdjustment && (
+        <PrayerTimeAdjustmentModal
+          visible={showAdjustmentModal}
+          onClose={handleAdjustmentModalClose}
+          onConfirm={handleAdjustmentConfirm}
+          onConfirmAll={handleAdjustmentConfirmAll}
+          prayer={selectedPrayerForAdjustment}
+          currentAdjustment={settings.timeAdjustments[selectedPrayerForAdjustment]}
+          isDark={isDark}
+        />
+      )}
 
     </View>
   );

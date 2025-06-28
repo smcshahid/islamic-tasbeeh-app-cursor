@@ -185,6 +185,7 @@ export interface PrayerSettings {
   fadeInDuration: number; // seconds
   fadeOutDuration: number; // seconds
   volume: number; // 0-1
+  timeFormat: '12h' | '24h'; // 12-hour (AM/PM) or 24-hour format
   location: {
     type: 'auto' | 'manual';
     selectedCity?: City;
@@ -222,9 +223,13 @@ export interface PrayerTimesState {
 }
 
 export interface PrayerTimesContextType extends PrayerTimesState {
+  // Current state
+  currentDate: string;
+  
   // Prayer time actions
   fetchPrayerTimes: (date?: string, forceRefresh?: boolean) => Promise<void>;
   updatePrayerAdjustment: (prayer: PrayerName, minutes: number) => Promise<void>;
+  applyAllAdjustments: (minutes: number) => Promise<void>;
   togglePrayerNotification: (prayer: PrayerName) => Promise<void>;
   
   // Location actions
@@ -249,6 +254,10 @@ export interface PrayerTimesContextType extends PrayerTimesState {
   // Cache management
   clearCache: () => Promise<void>;
   preloadNextMonth: () => Promise<void>;
+  
+  // Navigation actions
+  navigateToDate: (targetDate: string) => Promise<boolean>;
+  getInitialDate: () => string;
   
   // Navigation helpers
   getNextPrayer: () => { name: PrayerName; time: string; timeUntil: string } | null;

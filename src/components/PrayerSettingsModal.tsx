@@ -207,6 +207,73 @@ export default function PrayerSettingsModal({ visible, onClose }: PrayerSettings
         </TouchableOpacity>
       </View>
 
+      {/* Time Format */}
+      <View style={[styles.settingSection, { backgroundColor: accessibleColors.surface }]}>
+        <Text style={[styles.sectionTitle, { color: accessibleColors.text }]}>
+          Time Format
+        </Text>
+        
+        <TouchableOpacity
+          style={[
+            styles.locationOption,
+            settings.timeFormat === '24h' && styles.selectedLocationOption,
+          ]}
+          onPress={() => updatePrayerSettings({ timeFormat: '24h' })}
+        >
+          <Ionicons
+            name="time"
+            size={20}
+            color={settings.timeFormat === '24h' ? COLORS.primary.green : COLORS.neutral.gray500}
+          />
+          <View style={styles.locationInfo}>
+            <Text style={[
+              styles.locationLabel,
+              {
+                color: settings.timeFormat === '24h' ? COLORS.primary.green : accessibleColors.text,
+              },
+            ]}>
+              24-Hour Format
+            </Text>
+            <Text style={[styles.locationDescription, { color: COLORS.neutral.gray500 }]}>
+              13:30, 18:45 (Military time)
+            </Text>
+          </View>
+          {settings.timeFormat === '24h' && (
+            <Ionicons name="checkmark-circle" size={20} color={COLORS.primary.green} />
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.locationOption,
+            settings.timeFormat === '12h' && styles.selectedLocationOption,
+          ]}
+          onPress={() => updatePrayerSettings({ timeFormat: '12h' })}
+        >
+          <Ionicons
+            name="time"
+            size={20}
+            color={settings.timeFormat === '12h' ? COLORS.primary.green : COLORS.neutral.gray500}
+          />
+          <View style={styles.locationInfo}>
+            <Text style={[
+              styles.locationLabel,
+              {
+                color: settings.timeFormat === '12h' ? COLORS.primary.green : accessibleColors.text,
+              },
+            ]}>
+              12-Hour Format
+            </Text>
+            <Text style={[styles.locationDescription, { color: COLORS.neutral.gray500 }]}>
+              1:30 PM, 6:45 PM (AM/PM)
+            </Text>
+          </View>
+          {settings.timeFormat === '12h' && (
+            <Ionicons name="checkmark-circle" size={20} color={COLORS.primary.green} />
+          )}
+        </TouchableOpacity>
+      </View>
+
       {/* Adhan Settings */}
       <View style={[styles.settingSection, { backgroundColor: accessibleColors.surface }]}>
         <Text style={[styles.sectionTitle, { color: accessibleColors.text }]}>

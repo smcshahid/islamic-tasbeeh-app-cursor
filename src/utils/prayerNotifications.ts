@@ -1,7 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import * as TaskManager from 'expo-task-manager';
-import * as BackgroundFetch from 'expo-background-fetch';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import { secureLogger } from './secureLogger';
 import { audioService } from './audioService';
 import { hapticFeedback } from './haptics';
@@ -9,7 +9,6 @@ import { PrayerName, PrayerTime, DayPrayerTimes, PrayerSettings } from '../types
 
 // Background task name
 const PRAYER_NOTIFICATION_TASK = 'prayer-notification-background-task';
-const DAILY_UPDATE_TASK = 'daily-prayer-update-task';
 
 // Storage keys
 const SCHEDULED_NOTIFICATIONS_KEY = 'scheduled_prayer_notifications';
@@ -86,9 +85,6 @@ export class PrayerNotificationService {
       // Register background tasks
       await this.registerBackgroundTasks();
 
-      // Set up daily background fetch
-      await this.setupDailyBackgroundFetch();
-
       this.isInitialized = true;
       secureLogger.info('Prayer notification service initialized');
     } catch (error) {
@@ -101,6 +97,11 @@ export class PrayerNotificationService {
    */
   public async requestNotificationPermissions(): Promise<Notifications.NotificationPermissionsStatus> {
     try {
+      // For Android 13+, we need to create a notification channel first
+      if (Platform.OS === 'android') {
+        await this.setupNotificationChannels();
+      }
+
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       let finalStatus = existingStatus;
 
@@ -110,21 +111,22 @@ export class PrayerNotificationService {
             allowAlert: true,
             allowBadge: true,
             allowSound: true,
-            allowAnnouncements: true,
-          },
-          android: {
-            allowSound: true,
-            allowVibration: true,
+            allowAnnouncements: false,
           },
         });
         finalStatus = status;
       }
 
-      secureLogger.info('Notification permission status', { status: finalStatus });
-      return { status: finalStatus, granted: finalStatus === 'granted' } as any;
+      if (finalStatus !== 'granted') {
+        secureLogger.warn('Notification permissions not granted', { status: finalStatus });
+      } else {
+        secureLogger.info('Notification permissions granted');
+      }
+
+      return { status: finalStatus } as Notifications.NotificationPermissionsStatus;
     } catch (error) {
       secureLogger.error('Failed to request notification permissions', { error });
-      return { status: 'denied', granted: false } as any;
+      throw error;
     }
   }
 
@@ -136,8 +138,19 @@ export class PrayerNotificationService {
     settings: PrayerSettings
   ): Promise<void> {
     try {
-      // Cancel existing notifications for the date
-      await this.cancelNotificationsForDate(prayerTimes.date);
+      const today = new Date().toISOString().split('T')[0];
+      
+      // Only schedule notifications for today
+      if (prayerTimes.date !== today) {
+        secureLogger.info('Skipping notification scheduling for non-today date', {
+          requestedDate: prayerTimes.date,
+          today
+        });
+        return;
+      }
+
+      // Cancel ALL existing notifications first to avoid duplicates
+      await this.cancelAllNotifications();
 
       const scheduledNotifications: ScheduledNotification[] = [];
 
@@ -164,9 +177,10 @@ export class PrayerNotificationService {
       // Save scheduled notifications
       await this.saveScheduledNotifications(prayerTimes.date, scheduledNotifications);
 
-      secureLogger.info('All prayer notifications scheduled', {
+      secureLogger.info('Today\'s prayer notifications scheduled', {
         date: prayerTimes.date,
         count: scheduledNotifications.length,
+        prayers: scheduledNotifications.map(n => n.prayer)
       });
     } catch (error) {
       secureLogger.error('Failed to schedule all notifications', { error });
@@ -184,42 +198,77 @@ export class PrayerNotificationService {
     try {
       const [hours, minutes] = prayer.time.split(':').map(Number);
       const notificationDate = new Date(date);
-      notificationDate.setHours(hours, minutes, 0, 0);
+      
+      // Apply time adjustments
+      const adjustedMinutes = minutes + prayer.adjustment;
+      let adjustedHours = hours;
+      let finalMinutes = adjustedMinutes;
+      
+      // Handle minute overflow/underflow
+      if (adjustedMinutes >= 60) {
+        adjustedHours += Math.floor(adjustedMinutes / 60);
+        finalMinutes = adjustedMinutes % 60;
+      } else if (adjustedMinutes < 0) {
+        adjustedHours -= Math.ceil(Math.abs(adjustedMinutes) / 60);
+        finalMinutes = 60 + (adjustedMinutes % 60);
+      }
+      
+      // Handle hour overflow/underflow
+      if (adjustedHours >= 24) {
+        adjustedHours = adjustedHours % 24;
+        notificationDate.setDate(notificationDate.getDate() + 1);
+      } else if (adjustedHours < 0) {
+        adjustedHours = 24 + adjustedHours;
+        notificationDate.setDate(notificationDate.getDate() - 1);
+      }
+      
+      notificationDate.setHours(adjustedHours, finalMinutes, 0, 0);
 
       // Don't schedule past notifications
       if (notificationDate.getTime() <= Date.now()) {
         secureLogger.info('Skipping past prayer notification', {
           prayer: prayer.name,
-          time: prayer.time,
+          originalTime: prayer.time,
+          adjustedTime: `${adjustedHours.toString().padStart(2, '0')}:${finalMinutes.toString().padStart(2, '0')}`,
+          adjustment: prayer.adjustment,
           date,
         });
         return null;
       }
 
       const prayerDisplayName = this.getPrayerDisplayName(prayer.name);
+      const adjustedTimeStr = `${adjustedHours.toString().padStart(2, '0')}:${finalMinutes.toString().padStart(2, '0')}`;
 
       const identifier = await Notifications.scheduleNotificationAsync({
         content: {
           title: `${prayerDisplayName} Prayer Time`,
-          body: `It's time for ${prayerDisplayName} prayer (${prayer.time})`,
-          sound: settings.enableAdhan ? false : true, // Custom sound handling
+          body: `It's time for ${prayerDisplayName} prayer (${adjustedTimeStr})${prayer.adjustment !== 0 ? ` [Adjusted ${prayer.adjustment > 0 ? '+' : ''}${prayer.adjustment} min]` : ''}`,
+          sound: false, // We'll handle custom audio in the notification handler
           data: {
             type: 'prayer_time',
             prayer: prayer.name,
             time: prayer.time,
+            adjustedTime: adjustedTimeStr,
             date,
             adjustment: prayer.adjustment,
+            enableAdhan: settings.enableAdhan,
+            selectedAudio: settings.selectedAudio,
+            volume: settings.volume,
+            fadeInDuration: settings.fadeInDuration,
           },
           categoryIdentifier: 'PRAYER_NOTIFICATION',
         },
         trigger: {
           date: notificationDate,
+          channelId: 'prayer-notifications',
         },
       });
 
       secureLogger.info('Prayer notification scheduled', {
         prayer: prayer.name,
-        time: prayer.time,
+        originalTime: prayer.time,
+        adjustedTime: adjustedTimeStr,
+        adjustment: prayer.adjustment,
         date,
         identifier,
         scheduledFor: notificationDate.toISOString(),
@@ -231,6 +280,7 @@ export class PrayerNotificationService {
         error,
         prayer: prayer.name,
         time: prayer.time,
+        adjustment: prayer.adjustment,
         date,
       });
       return null;
@@ -248,28 +298,36 @@ export class PrayerNotificationService {
       if (data?.type !== 'prayer_time') return;
 
       const prayer = data.prayer as PrayerName;
-      const settings = await this.getPrayerSettings();
 
       secureLogger.info('Prayer notification received', {
         prayer,
-        time: data.time,
+        originalTime: data.time,
+        adjustedTime: data.adjustedTime,
         date: data.date,
+        adjustment: data.adjustment,
       });
 
-      // Play Adhan if enabled
-      if (settings.enableAdhan && settings.selectedAudio) {
+      // Play Adhan if enabled (using settings from notification data)
+      if (data.enableAdhan && data.selectedAudio) {
         try {
           await audioService.playAdhan(
-            settings.selectedAudio,
-            settings.volume,
-            settings.fadeInDuration
+            data.selectedAudio,
+            data.volume || 0.8,
+            data.fadeInDuration || 3
           );
+          
+          secureLogger.info('Adhan started playing for prayer notification', {
+            prayer,
+            audio: data.selectedAudio.name,
+            volume: data.volume,
+          });
         } catch (error) {
-          secureLogger.error('Failed to play Adhan', { error });
+          secureLogger.error('Failed to play Adhan', { error, prayer });
         }
       }
 
       // Trigger haptic feedback if enabled
+      const settings = await this.getPrayerSettings();
       if (settings.enableVibration) {
         await hapticFeedback.impactAsync('heavy');
       }
@@ -323,7 +381,7 @@ export class PrayerNotificationService {
         content: {
           title: `${this.getPrayerDisplayName(prayer)} Prayer Reminder`,
           body: `Snooze ${snoozeCount}/${settings.maxSnoozes} - Time for ${this.getPrayerDisplayName(prayer)} prayer`,
-          sound: settings.enableAdhan ? false : true,
+          sound: false,
           data: {
             type: 'prayer_snooze',
             prayer,
@@ -335,6 +393,7 @@ export class PrayerNotificationService {
         },
         trigger: {
           date: snoozeTime,
+          channelId: 'prayer-snooze',
         },
       });
 
@@ -532,41 +591,19 @@ export class PrayerNotificationService {
   private async registerBackgroundTasks(): Promise<void> {
     try {
       // Define the background task
-      TaskManager.defineTask(DAILY_UPDATE_TASK, async () => {
+      TaskManager.defineTask(PRAYER_NOTIFICATION_TASK, async () => {
         try {
           await this.recreateNotificationsDaily();
-          return BackgroundFetch.BackgroundFetchResult.NewData;
+          return TaskManager.TaskResult.NewData;
         } catch (error) {
           secureLogger.error('Background task failed', { error });
-          return BackgroundFetch.BackgroundFetchResult.Failed;
+          return TaskManager.TaskResult.Failed;
         }
       });
 
       secureLogger.info('Background tasks registered');
     } catch (error) {
       secureLogger.error('Failed to register background tasks', { error });
-    }
-  }
-
-  /**
-   * Set up daily background fetch
-   */
-  private async setupDailyBackgroundFetch(): Promise<void> {
-    try {
-      const status = await BackgroundFetch.getStatusAsync();
-      if (status === BackgroundFetch.BackgroundFetchStatus.Available) {
-        await BackgroundFetch.registerTaskAsync(DAILY_UPDATE_TASK, {
-          minimumInterval: 24 * 60 * 60 * 1000, // 24 hours
-          stopOnTerminate: false,
-          startOnBoot: true,
-        });
-
-        secureLogger.info('Daily background fetch registered');
-      } else {
-        secureLogger.warn('Background fetch not available', { status });
-      }
-    } catch (error) {
-      secureLogger.error('Failed to set up background fetch', { error });
     }
   }
 
@@ -727,6 +764,92 @@ export class PrayerNotificationService {
 
     secureLogger.info('Prayer notification service disposed');
   }
+
+  /**
+   * Initialize today's notifications on app start
+   * This should be called when the app starts to ensure notifications are set up
+   */
+  public async initializeTodaysNotifications(): Promise<void> {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      
+      secureLogger.info('Initializing today\'s notifications on app start', { today });
+
+      // Get current prayer times and settings
+      const prayerTimes = await this.getCurrentPrayerTimes();
+      const settings = await this.getPrayerSettings();
+
+      if (!prayerTimes || prayerTimes.date !== today) {
+        secureLogger.warn('No current prayer times available for today', { 
+          hasPrayerTimes: !!prayerTimes,
+          prayerTimesDate: prayerTimes?.date,
+          today
+        });
+        return;
+      }
+
+      // Cancel any existing notifications first
+      await this.cancelAllNotifications();
+
+      // Schedule notifications for today's prayers
+      await this.scheduleAllNotifications(prayerTimes, settings);
+
+      secureLogger.info('Today\'s notifications initialized successfully');
+    } catch (error) {
+      secureLogger.error('Failed to initialize today\'s notifications', { error });
+    }
+  }
+
+  /**
+   * Set up notification channels for different types of notifications
+   */
+  private async setupNotificationChannels(): Promise<void> {
+    try {
+      if (Platform.OS !== 'android') return;
+
+      // Main prayer notification channel
+      await Notifications.setNotificationChannelAsync('prayer-notifications', {
+        name: 'Prayer Time Notifications',
+        description: 'Notifications for Islamic prayer times',
+        importance: Notifications.AndroidImportance.HIGH,
+        sound: false, // We handle custom audio separately
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#4CAF50',
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+        bypassDnd: true,
+        showBadge: true,
+      });
+
+      // Snooze notification channel
+      await Notifications.setNotificationChannelAsync('prayer-snooze', {
+        name: 'Prayer Reminders',
+        description: 'Snoozed prayer time reminders',
+        importance: Notifications.AndroidImportance.DEFAULT,
+        sound: false,
+        vibrationPattern: [0, 100, 100, 100],
+        lightColor: '#FF9800',
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+        showBadge: true,
+      });
+
+      // Default channel for other notifications
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'General Notifications',
+        description: 'General app notifications',
+        importance: Notifications.AndroidImportance.DEFAULT,
+        sound: true,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#2196F3',
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+        showBadge: true,
+      });
+
+      secureLogger.info('Notification channels set up successfully');
+    } catch (error) {
+      secureLogger.error('Failed to set up notification channels', { error });
+      throw error;
+    }
+  }
 }
 
 // Create singleton instance
@@ -767,6 +890,10 @@ export const recreateNotificationsDaily = async (): Promise<void> => {
 
 export const requestNotificationPermissions = async (): Promise<Notifications.NotificationPermissionsStatus> => {
   return prayerNotificationService.requestNotificationPermissions();
+};
+
+export const initializeTodaysNotifications = async (): Promise<void> => {
+  return prayerNotificationService.initializeTodaysNotifications();
 };
 
 // Export the service instance as well for advanced use
