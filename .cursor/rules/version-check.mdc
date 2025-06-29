@@ -1,0 +1,6 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+If verion are not compatible always use npx expo install --fix to fix the dependencies.

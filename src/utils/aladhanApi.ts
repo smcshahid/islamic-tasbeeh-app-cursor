@@ -5,7 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SAMPLE_PRAYER_DATA, getSamplePrayerTimes, getDefaultDemoDate, isDateInSampleRange } from './sampleDataHandler';
 
 // Development mode configuration
-const USE_SAMPLE_DATA = true; // Set to false for production API calls
+let USE_SAMPLE_DATA = false; // Set to false for production API calls
 
 // Aladhan API base URL
 const ALADHAN_BASE_URL = 'https://api.aladhan.com/v1';
@@ -350,48 +350,7 @@ export class AladhanApiService {
     }
   }
 
-  /**
-   * Get location information from coordinates
-   */
-  public async getLocationFromCoordinates(
-    latitude: number,
-    longitude: number
-  ): Promise<LocationResponse> {
-    if (!this.isOnline) {
-      throw new Error('No internet connection available');
-    }
 
-    try {
-      // Using a free geocoding service
-      const response = await this.fetchWithTimeout(
-        `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`,
-        {},
-        8000
-      );
-
-      if (!response.ok) {
-        throw new Error(`Geocoding request failed with status ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      return {
-        city: data.city || data.locality || 'Unknown City',
-        country: data.countryName || 'Unknown Country',
-        latitude,
-        longitude,
-      };
-    } catch (error) {
-      secureLogger.error('Failed to get location from coordinates', { error: this.getErrorMessage(error), latitude, longitude });
-      // Return default location info if geocoding fails
-      return {
-        city: 'Unknown City',
-        country: 'Unknown Country',
-        latitude,
-        longitude,
-      };
-    }
-  }
 
   /**
    * Search for cities by name
@@ -435,9 +394,13 @@ export class AladhanApiService {
       };
     });
 
+    // Format Hijri date properly
+    const [hijriDay, hijriMonth, hijriYear] = data.data.date.hijri.date.split('-');
+    const hijriDateFormatted = `${hijriDay} ${data.data.date.hijri.month.en} ${hijriYear} AH`;
+
     return {
-      date: data.data.date.gregorian.date,
-      hijriDate: data.data.date.hijri.date,
+      date: data.data.date.gregorian.date, // Keep API format: DD-MM-YYYY
+      hijriDate: hijriDateFormatted,
       prayers,
       location: {
         city: 'Unknown City', // Will be updated by location service
@@ -453,8 +416,8 @@ export class AladhanApiService {
    * Format time from API response (remove timezone info)
    */
   private formatTime(timeString: string): string {
-    // API returns time like "05:30 (+03)" or "05:30"
-    return timeString.split(' ')[0];
+    // API returns time like "05:30 (+03)", "05:30 (BST)", or "05:30"
+    return timeString.replace(/\s*\([^)]*\)\s*$/, '').trim();
   }
 
   /**
@@ -703,43 +666,52 @@ const validateApiResponse = (data: any): boolean => {
 
 const transformApiResponse = (apiData: ApiResponse['data'], location: Location, method: CalculationMethod): DayPrayerTimes[] => {
   return apiData.map(item => {
+    // Format Hijri date properly
+    const [hijriDay, hijriMonth, hijriYear] = item.date.hijri.date.split('-');
+    const hijriDateFormatted = `${hijriDay} ${item.date.hijri.month.en} ${hijriYear} AH`;
+
+    // Helper to clean time strings - remove timezone info
+    const cleanTime = (timeString: string): string => {
+      return timeString.replace(/\s*\([^)]*\)\s*$/, '').trim();
+    };
+
     const prayers: PrayerTime[] = [
       {
         name: 'fajr',
-        time: item.timings.Fajr.replace(' (UTC)', ''),
-        originalTime: item.timings.Fajr.replace(' (UTC)', ''),
+        time: cleanTime(item.timings.Fajr),
+        originalTime: cleanTime(item.timings.Fajr),
         adjustment: 0,
         notificationEnabled: true,
         isNotified: false,
       },
       {
         name: 'dhuhr',
-        time: item.timings.Dhuhr.replace(' (UTC)', ''),
-        originalTime: item.timings.Dhuhr.replace(' (UTC)', ''),
+        time: cleanTime(item.timings.Dhuhr),
+        originalTime: cleanTime(item.timings.Dhuhr),
         adjustment: 0,
         notificationEnabled: true,
         isNotified: false,
       },
       {
         name: 'asr',
-        time: item.timings.Asr.replace(' (UTC)', ''),
-        originalTime: item.timings.Asr.replace(' (UTC)', ''),
+        time: cleanTime(item.timings.Asr),
+        originalTime: cleanTime(item.timings.Asr),
         adjustment: 0,
         notificationEnabled: true,
         isNotified: false,
       },
       {
         name: 'maghrib',
-        time: item.timings.Maghrib.replace(' (UTC)', ''),
-        originalTime: item.timings.Maghrib.replace(' (UTC)', ''),
+        time: cleanTime(item.timings.Maghrib),
+        originalTime: cleanTime(item.timings.Maghrib),
         adjustment: 0,
         notificationEnabled: true,
         isNotified: false,
       },
       {
         name: 'isha',
-        time: item.timings.Isha.replace(' (UTC)', ''),
-        originalTime: item.timings.Isha.replace(' (UTC)', ''),
+        time: cleanTime(item.timings.Isha),
+        originalTime: cleanTime(item.timings.Isha),
         adjustment: 0,
         notificationEnabled: true,
         isNotified: false,
@@ -747,8 +719,8 @@ const transformApiResponse = (apiData: ApiResponse['data'], location: Location, 
     ];
 
     return {
-      date: item.date.gregorian.date,
-      hijriDate: item.date.hijri.date,
+      date: item.date.gregorian.date, // Keep API format: DD-MM-YYYY
+      hijriDate: hijriDateFormatted,
       prayers,
       location: {
         city: location.city || 'Unknown',
@@ -821,8 +793,7 @@ export const fetchMonthlyPrayerTimes = async (
   const params = new URLSearchParams({
     latitude: location.latitude.toString(),
     longitude: location.longitude.toString(),
-    method: method.id.toString(),
-    iso8601: 'true'
+    method: method.id.toString()
   });
 
   try {
@@ -866,6 +837,7 @@ export const fetchMonthlyPrayerTimes = async (
     }
 
     console.log(`[PrayerAPI] Successfully fetched ${transformedData.length} days`);
+    console.log(`[PrayerAPI] Date range:`, transformedData.map(d => d.date));
     return transformedData;
 
   } catch (error) {
@@ -897,11 +869,11 @@ export const fetchTodaysPrayerTimes = async (
   
   try {
     const monthlyData = await fetchMonthlyPrayerTimes(location, method, year, month);
-    const today = now.toLocaleDateString('en-GB', { 
-      day: '2-digit', 
-      month: '2-digit', 
-      year: 'numeric' 
-    }).split('/').reverse().join('-');
+    // Use API date format DD-MM-YYYY
+    const today = `${now.getDate().toString().padStart(2, '0')}-${month.toString().padStart(2, '0')}-${year}`;
+    
+    console.log(`[PrayerAPI] Looking for today's prayer times: ${today}`);
+    console.log(`[PrayerAPI] Available dates:`, monthlyData.map(day => day.date));
     
     return monthlyData.find(day => day.date === today) || null;
   } catch (error) {
@@ -973,11 +945,37 @@ export const getCacheInfo = async (): Promise<{
 
 // Configuration helper to switch between sample and live data
 export const toggleSampleDataMode = (): boolean => {
-  // In a real app, you might want to store this in AsyncStorage
-  // For now, you'll need to manually change the USE_SAMPLE_DATA constant
-  console.log(`[PrayerAPI] Sample data mode is currently: ${USE_SAMPLE_DATA}`);
-  console.log('[PrayerAPI] To change mode, modify USE_SAMPLE_DATA constant in aladhanApi.ts');
+  USE_SAMPLE_DATA = !USE_SAMPLE_DATA;
+  console.log(`[PrayerAPI] Sample data mode toggled to: ${USE_SAMPLE_DATA}`);
   return USE_SAMPLE_DATA;
 };
 
-export const isSampleDataMode = (): boolean => USE_SAMPLE_DATA; 
+export const isSampleDataMode = (): boolean => {
+  console.log(`[PrayerAPI] Sample data mode check: ${USE_SAMPLE_DATA}`);
+  return USE_SAMPLE_DATA;
+};
+
+// Add function to force clear all production cache
+export const clearAllProductionCache = async (): Promise<void> => {
+  try {
+    console.log('[PrayerAPI] Clearing all production cache...');
+    await clearPrayerTimesCache();
+    
+    // Also clear any AsyncStorage cache
+    const keys = await AsyncStorage.getAllKeys();
+    const cacheKeys = keys.filter(key => 
+      key.includes('prayer_times_') || 
+      key.includes('location_') ||
+      key === 'prayer_times_location'
+    );
+    
+    if (cacheKeys.length > 0) {
+      await AsyncStorage.multiRemove(cacheKeys);
+      console.log(`[PrayerAPI] Removed ${cacheKeys.length} cache entries`);
+    }
+    
+    console.log('[PrayerAPI] All production cache cleared successfully');
+  } catch (error) {
+    console.error('[PrayerAPI] Error clearing production cache:', error);
+  }
+}; 

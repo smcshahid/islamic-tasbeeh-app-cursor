@@ -1,0 +1,6 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+Make sure you are using expo 53 and first priority is to expo provided libraries then expo supported libraries.

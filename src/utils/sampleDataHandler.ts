@@ -98,11 +98,10 @@ export function convertSampleDataToAppFormat(apiData: SampleApiData): DayPrayerT
   const [hijriDay, hijriMonth, hijriYear] = apiData.date.hijri.date.split('-');
   const hijriDateString = `${hijriDay} ${apiData.date.hijri.month.en} ${hijriYear} AH`;
 
-  // Extract prayer times and convert from UTC to local times
+  // Extract prayer times and remove timezone info
   const extractTime = (timeString: string): string => {
-    // Remove (UTC) suffix and return HH:MM format
-    const time = timeString.replace(' (UTC)', '');
-    return time;
+    // Remove timezone suffixes like (UTC), (BST), etc. and return HH:MM format
+    return timeString.replace(/\s*\([^)]*\)\s*$/, '').trim();
   };
 
   const prayers: PrayerTime[] = [
@@ -2966,7 +2965,8 @@ export function generateSampleDataForDate(targetDate: string): DayPrayerTimes {
   
   // Extract and format prayer times with realistic variations
   const extractTime = (timeString: string): string => {
-    return timeString.replace(' (UTC)', '');
+    // Remove timezone suffixes like (UTC), (BST), etc. and return HH:MM format
+    return timeString.replace(/\s*\([^)]*\)\s*$/, '').trim();
   };
 
   // Apply realistic variations in prayer times throughout June (UK summer)

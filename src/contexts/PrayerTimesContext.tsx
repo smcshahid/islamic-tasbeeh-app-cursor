@@ -12,8 +12,8 @@ import {
   DEFAULT_ADHAN_AUDIOS,
   POPULAR_CITIES
 } from '../types';
-import { fetchMonthlyPrayerTimes, fetchTodaysPrayerTimes, clearPrayerTimesCache, isSampleDataMode } from '../utils/aladhanApi';
-import { getLocation, requestLocationPermission } from '../utils/locationService';
+import { fetchMonthlyPrayerTimes, fetchTodaysPrayerTimes, clearPrayerTimesCache, isSampleDataMode, clearAllProductionCache } from '../utils/aladhanApi';
+import { getLocation, requestLocationPermission, getLocationWithFallback, getLocationDisplayName } from '../utils/locationService';
 import { scheduleAllPrayerNotifications, cancelAllPrayerNotifications, initializeTodaysNotifications } from '../utils/prayerNotifications';
 import { playAdhan, stopAdhan, previewAudio } from '../utils/audioService';
 import { adjustTime } from '../utils/helpers';
@@ -30,7 +30,7 @@ const DEFAULT_LOCATION = {
 };
 
 const DEFAULT_SETTINGS: PrayerSettings = {
-  calculationMethod: CALCULATION_METHODS[2], // Muslim World League
+  calculationMethod: CALCULATION_METHODS[2], // Muslim World League  
   selectedAudio: DEFAULT_ADHAN_AUDIOS[0],
   enableAdhan: true,
   enableVibration: true,
@@ -42,8 +42,8 @@ const DEFAULT_SETTINGS: PrayerSettings = {
   volume: 0.8,
   timeFormat: '24h',
   location: {
-    type: 'manual',
-    selectedCity: POPULAR_CITIES.find(city => city.id === 'london'),
+    type: 'auto', // Default to auto location detection
+    selectedCity: POPULAR_CITIES.find(city => city.id === 'london'), // Fallback city
     lastKnownLocation: DEFAULT_LOCATION,
   },
   timeAdjustments: {
@@ -75,6 +75,7 @@ interface EnhancedPrayerTimesState extends PrayerTimesState {
   currentDate: string; // Currently selected date
   initialDate: string; // The initial demo/today date
   navigatingDate: string | null; // Date being navigated to (for loading states)
+  lastLocationCheck: number; // Timestamp of last location check
 }
 
 const initialState: EnhancedPrayerTimesState = {
@@ -83,6 +84,7 @@ const initialState: EnhancedPrayerTimesState = {
   currentDate: '',
   initialDate: '',
   navigatingDate: null,
+  lastLocationCheck: 0,
   settings: DEFAULT_SETTINGS,
   isLoading: false,
   error: null,
@@ -105,7 +107,8 @@ type EnhancedPrayerTimesAction =
   | { type: 'SET_ONLINE_STATUS'; payload: boolean }
   | { type: 'SET_CURRENT_DATE'; payload: string }
   | { type: 'SET_INITIAL_DATE'; payload: string }
-  | { type: 'SET_NAVIGATING_DATE'; payload: string | null };
+  | { type: 'SET_NAVIGATING_DATE'; payload: string | null }
+  | { type: 'SET_LAST_LOCATION_CHECK'; payload: number };
 
 function enhancedPrayerTimesReducer(state: EnhancedPrayerTimesState, action: EnhancedPrayerTimesAction): EnhancedPrayerTimesState {
   switch (action.type) {
@@ -154,6 +157,8 @@ function enhancedPrayerTimesReducer(state: EnhancedPrayerTimesState, action: Enh
       return { ...state, initialDate: action.payload };
     case 'SET_NAVIGATING_DATE':
       return { ...state, navigatingDate: action.payload };
+    case 'SET_LAST_LOCATION_CHECK':
+      return { ...state, lastLocationCheck: action.payload };
     default:
       return state;
   }
@@ -174,9 +179,23 @@ export const PrayerTimesProvider: React.FC<{ children: ReactNode }> = ({ childre
 
   // Helper function to get current location for API calls
   const getCurrentLocation = () => {
+    console.log('[Location] Current location settings:', {
+      type: state.settings.location.type,
+      hasLastKnownLocation: !!state.settings.location.lastKnownLocation,
+      hasSelectedCity: !!state.settings.location.selectedCity,
+      lastKnownLocation: state.settings.location.lastKnownLocation,
+      selectedCity: state.settings.location.selectedCity?.name
+    });
+
+    // Priority 1: Auto-detected location when enabled
     if (state.settings.location.type === 'auto' && state.settings.location.lastKnownLocation) {
+      console.log('[Location] Using auto-detected location:', state.settings.location.lastKnownLocation);
       return state.settings.location.lastKnownLocation;
-    } else if (state.settings.location.selectedCity) {
+    }
+    
+    // Priority 2: Manually selected city
+    if (state.settings.location.selectedCity) {
+      console.log('[Location] Using manually selected city:', state.settings.location.selectedCity);
       return {
         latitude: state.settings.location.selectedCity.latitude,
         longitude: state.settings.location.selectedCity.longitude,
@@ -184,12 +203,15 @@ export const PrayerTimesProvider: React.FC<{ children: ReactNode }> = ({ childre
         country: state.settings.location.selectedCity.country,
       };
     }
+    
+    // Priority 3: Default fallback location
+    console.log('[Location] Using default fallback location:', DEFAULT_LOCATION);
     return DEFAULT_LOCATION;
   };
 
-  // Helper to get month key from date
+  // Helper to get month key from date (DD-MM-YYYY format)
   const getMonthKey = (date: string): string => {
-    const [year, month] = date.split('-');
+    const [day, month, year] = date.split('-');
     return `${year}-${month}`;
   };
 
@@ -209,21 +231,114 @@ export const PrayerTimesProvider: React.FC<{ children: ReactNode }> = ({ childre
     return monthKey === currentMonthKey;
   };
 
-  // Enhanced function to fetch month data with smart caching
-  const fetchMonthData = async (date: string, forceRefresh: boolean = false): Promise<DayPrayerTimes[]> => {
-    const monthKey = getMonthKey(date);
-    const isCurrent = isCurrentMonth(monthKey);
-    
-    // Check month cache first
-    if (!forceRefresh && state.monthCache[monthKey]) {
-      console.log(`Using cached month data for ${monthKey}`);
-      return state.monthCache[monthKey].data;
+  // Check and update location if auto detection is enabled
+  const checkAndUpdateLocation = async (force: boolean = false): Promise<any> => {
+    // Only run auto detection if it's enabled
+    if (state.settings.location.type !== 'auto') {
+      console.log('[Location] Auto location not enabled, skipping detection');
+      return null;
     }
 
-    console.log(`Fetching month data for ${monthKey}${isCurrent ? ' (current month)' : ''}`);
+    // Throttle location checks - only run every 5 minutes (unless forced)
+    const now = Date.now();
+    if (!force) {
+      const timeSinceLastCheck = now - state.lastLocationCheck;
+      const minimumInterval = 5 * 60 * 1000; // 5 minutes
+
+      if (timeSinceLastCheck < minimumInterval) {
+        console.log(`[Location] Location checked recently (${Math.round(timeSinceLastCheck / 1000)}s ago), skipping`);
+        return null;
+      }
+    }
+
+    try {
+      console.log('[Location] Running auto location detection...');
+      dispatch({ type: 'SET_LAST_LOCATION_CHECK', payload: now });
+      
+      const result = await getLocationWithFallback();
+      
+      if (result.location && !result.requiresManualSelection) {
+        const newLocation = result.location;
+        const currentLocation = state.settings.location.lastKnownLocation;
+        
+        // Check if location has changed significantly (more than ~100 meters)
+        const hasLocationChanged = !currentLocation || 
+          Math.abs(currentLocation.latitude - newLocation.latitude) > 0.001 || 
+          Math.abs(currentLocation.longitude - newLocation.longitude) > 0.001 ||
+          currentLocation.city !== newLocation.city;
+
+        if (hasLocationChanged) {
+          console.log('[Location] Location changed detected:', {
+            old: currentLocation,
+            new: newLocation
+          });
+
+          const locationUpdate = {
+            location: {
+              ...state.settings.location,
+              lastKnownLocation: newLocation,
+            },
+          };
+
+          dispatch({ type: 'UPDATE_SETTINGS', payload: locationUpdate });
+          await AsyncStorage.setItem('prayerSettings', JSON.stringify({ ...state.settings, ...locationUpdate }));
+          
+          // Clear cache since location changed
+          dispatch({ type: 'CLEAR_CACHE' });
+          await clearPrayerTimesCache();
+          console.log('[Location] Location updated and cache cleared');
+          console.log(`[Location] Returning updated location: ${newLocation.city}, ${newLocation.country} (${newLocation.latitude}, ${newLocation.longitude})`);
+          
+          // Return the new location for immediate use
+          return newLocation;
+        } else {
+          console.log('[Location] Location unchanged, using existing data');
+          return null;
+        }
+      } else {
+        console.log('[Location] Auto location failed:', result.reason);
+        return null;
+      }
+    } catch (error) {
+      console.log('[Location] Auto location detection error:', error);
+      // Don't throw error - continue with existing location
+      return null;
+    }
+  };
+
+  // Enhanced function to fetch month data - only cache current month
+  const fetchMonthData = async (date: string, forceRefresh: boolean = false, overrideLocation?: any): Promise<DayPrayerTimes[]> => {
+    const monthKey = getMonthKey(date);
+    const isCurrent = isCurrentMonth(monthKey);
+    const currentLocation = overrideLocation || getCurrentLocation();
     
-    const [year, month] = date.split('-');
-    const location = getCurrentLocation();
+    if (overrideLocation) {
+      console.log(`[Location] Using override location: ${overrideLocation.city}, ${overrideLocation.country}`);
+    }
+    
+    // Only check cache for current month and validate location matches
+    if (!forceRefresh && isCurrent && state.monthCache[monthKey]) {
+      const cachedData = state.monthCache[monthKey].data;
+      const cachedLocation = cachedData[0]?.location;
+      
+      // Check if cached location matches current location settings
+      const locationMatches = cachedLocation && 
+        Math.abs(cachedLocation.latitude - currentLocation.latitude) < 0.001 && 
+        Math.abs(cachedLocation.longitude - currentLocation.longitude) < 0.001;
+      
+      if (locationMatches) {
+        console.log(`Using cached month data for current month ${monthKey} (location matches)`);
+        return cachedData;
+      } else {
+        console.log(`Cache location mismatch for ${monthKey}. Cached: ${cachedLocation?.city}, Current: ${currentLocation.city}. Refetching...`);
+      }
+    }
+
+    console.log(`Fetching month data for ${monthKey}${isCurrent ? ' (current month)' : ' (non-current month - live fetch)'}`);
+    console.log(`[Location] Using location for API call: ${currentLocation.city}, ${currentLocation.country} (${currentLocation.latitude}, ${currentLocation.longitude})`);
+    
+    const [day, month, year] = date.split('-');
+    const location = currentLocation;
     const method = state.settings.calculationMethod;
 
     try {
@@ -235,10 +350,10 @@ export const PrayerTimesProvider: React.FC<{ children: ReactNode }> = ({ childre
            throw new Error(`Sample data only available for June 2025, requested: ${year}-${month}`);
          }
          
-         // Generate data for all days in June (1-30)
+         // Generate data for all days in June (1-30) in DD-MM-YYYY format
          const availableDates = Array.from({ length: 30 }, (_, i) => {
-           const day = i + 1;
-           return `${year}-${month}-${day.toString().padStart(2, '0')}`;
+           const dayNum = i + 1;
+           return `${dayNum.toString().padStart(2, '0')}-${month}-${year}`;
          });
 
          monthData = availableDates.map(dateStr => {
@@ -258,37 +373,38 @@ export const PrayerTimesProvider: React.FC<{ children: ReactNode }> = ({ childre
          monthData = await fetchMonthlyPrayerTimes(location, method, parseInt(year), parseInt(month));
        }
 
-      // Apply current settings to all prayer times
+      // Apply settings to month data but keep original times in cache
+      const currentLocationInfo = overrideLocation || getCurrentLocation();
       const processedMonthData = monthData.map(dayTimes => ({
         ...dayTimes,
-        prayers: dayTimes.prayers.map(prayer => {
-          const adjustmentValue = state.settings.timeAdjustments[prayer.name] || 0;
-          return {
-            ...prayer,
-            adjustment: adjustmentValue,
-            notificationEnabled: state.settings.notifications[prayer.name],
-            time: adjustmentValue !== 0 
-              ? adjustTime(prayer.originalTime, adjustmentValue)
-              : prayer.originalTime,
-          };
-        })
+        location: {
+          ...dayTimes.location,
+          city: currentLocationInfo.city || dayTimes.location.city,
+          country: currentLocationInfo.country || dayTimes.location.country,
+        },
+        prayers: dayTimes.prayers.map(prayer => ({
+          ...prayer,
+          // Store only notification settings, keep original times
+          notificationEnabled: state.settings.notifications[prayer.name],
+          // Keep original time and adjustment as 0 in cache
+          time: prayer.originalTime,
+          adjustment: 0,
+        }))
       }));
 
-      // Cache the month data
-      dispatch({
-        type: 'UPDATE_MONTH_CACHE',
-        payload: {
-          monthKey,
-          data: processedMonthData,
-          isCurrent
-        }
-      });
-
-      // Clean up non-current month cache periodically
-      if (!isCurrent) {
-        setTimeout(() => {
-          dispatch({ type: 'CLEAR_NON_CURRENT_MONTH_CACHE' });
-        }, 30000); // Clean up after 30 seconds
+      // Only cache current month data
+      if (isCurrent) {
+        console.log(`Caching current month data for ${monthKey}`);
+        dispatch({
+          type: 'UPDATE_MONTH_CACHE',
+          payload: {
+            monthKey,
+            data: processedMonthData,
+            isCurrent: true
+          }
+        });
+      } else {
+        console.log(`Not caching non-current month data for ${monthKey} - using live data`);
       }
 
       return processedMonthData;
@@ -313,22 +429,58 @@ export const PrayerTimesProvider: React.FC<{ children: ReactNode }> = ({ childre
 
       console.log(`Fetching prayer times for ${targetDate}`);
 
-      // Check individual date cache first
-      if (!forceRefresh && state.cache[targetDate]) {
-        console.log(`Using cached prayer times for ${targetDate}`);
-        dispatch({ type: 'SET_CURRENT_TIMES', payload: state.cache[targetDate] });
-        dispatch({ type: 'SET_CURRENT_DATE', payload: targetDate });
-        dispatch({ type: 'SET_LOADING', payload: false });
-        dispatch({ type: 'SET_NAVIGATING_DATE', payload: null });
-        return;
+      // Auto location detection when accessing prayer times
+      const updatedLocation = await checkAndUpdateLocation();
+
+      console.log(`After location check, fetching prayer times for ${targetDate}`);
+
+      // If location was updated, force refresh to avoid using stale cache
+      const shouldForceRefresh = forceRefresh || !!updatedLocation;
+      if (updatedLocation) {
+        console.log('[Location] Location was updated, forcing refresh to avoid stale cache');
       }
 
-      // Try to get data from month cache first
+      // Get month data first (this ensures we have fresh data with current settings)
       const monthKey = getMonthKey(targetDate);
       let monthData: DayPrayerTimes[];
+      
+      // Only use month cache, no individual day caching
+      // Check if we have month data cached and it's current month
+      const shouldUseCachedMonth = !shouldForceRefresh && 
+        state.monthCache[monthKey] && 
+        isCurrentMonth(monthKey);
+
+      if (shouldUseCachedMonth) {
+        console.log(`Using cached month data for ${monthKey} (no location update)`);
+        const monthData = state.monthCache[monthKey].data;
+        const dayPrayerTimes = monthData.find(day => day.date === targetDate);
+        
+        if (dayPrayerTimes) {
+          // Apply current adjustments for display
+          const displayTimes = {
+            ...dayPrayerTimes,
+            prayers: dayPrayerTimes.prayers.map(prayer => {
+              const adjustmentValue = state.settings.timeAdjustments[prayer.name] || 0;
+              return {
+                ...prayer,
+                adjustment: adjustmentValue,
+                time: adjustmentValue !== 0 
+                  ? adjustTime(prayer.originalTime, adjustmentValue)
+                  : prayer.originalTime,
+              };
+            })
+          };
+          
+          dispatch({ type: 'SET_CURRENT_TIMES', payload: displayTimes });
+          dispatch({ type: 'SET_CURRENT_DATE', payload: targetDate });
+          dispatch({ type: 'SET_LOADING', payload: false });
+          dispatch({ type: 'SET_NAVIGATING_DATE', payload: null });
+          return;
+        }
+      }
 
              try {
-         monthData = await fetchMonthData(targetDate, forceRefresh);
+         monthData = await fetchMonthData(targetDate, shouldForceRefresh, updatedLocation);
        } catch (monthError) {
          console.error('Month data fetch failed:', monthError);
          
@@ -353,14 +505,30 @@ export const PrayerTimesProvider: React.FC<{ children: ReactNode }> = ({ childre
       const dayPrayerTimes = monthData.find(day => day.date === targetDate);
 
       if (dayPrayerTimes) {
-        // Cache individual day
-        dispatch({ type: 'UPDATE_CACHE', payload: { date: targetDate, times: dayPrayerTimes } });
-        dispatch({ type: 'SET_CURRENT_TIMES', payload: dayPrayerTimes });
+        // Apply current adjustments for display (not stored in cache)
+        const displayTimes = {
+          ...dayPrayerTimes,
+          prayers: dayPrayerTimes.prayers.map(prayer => {
+            const adjustmentValue = state.settings.timeAdjustments[prayer.name] || 0;
+            return {
+              ...prayer,
+              adjustment: adjustmentValue,
+              time: adjustmentValue !== 0 
+                ? adjustTime(prayer.originalTime, adjustmentValue)
+                : prayer.originalTime,
+            };
+          })
+        };
+
+        // Don't cache individual days - only month data is cached
+        // Display data with current adjustments applied
+        dispatch({ type: 'SET_CURRENT_TIMES', payload: displayTimes });
         dispatch({ type: 'SET_CURRENT_DATE', payload: targetDate });
 
         // Schedule notifications only for today's prayers (in real world)
         if (!isSampleDataMode()) {
-          const today = new Date().toISOString().split('T')[0];
+          const now = new Date();
+          const today = `${now.getDate().toString().padStart(2, '0')}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getFullYear()}`;
           if (targetDate === today) {
             await scheduleAllPrayerNotifications(dayPrayerTimes, state.settings);
           }
@@ -396,7 +564,7 @@ export const PrayerTimesProvider: React.FC<{ children: ReactNode }> = ({ childre
   const navigateToDate = async (targetDate: string): Promise<boolean> => {
     // Validation for sample data mode
     if (isSampleDataMode()) {
-      const [year, month, day] = targetDate.split('-');
+      const [day, month, year] = targetDate.split('-');
       
       // Check year
       if (year !== '2025') {
@@ -457,8 +625,9 @@ export const PrayerTimesProvider: React.FC<{ children: ReactNode }> = ({ childre
         return false;
       }
     } else {
-      // Production mode validation
-      const targetDateObj = new Date(targetDate);
+      // Production mode validation - need to convert DD-MM-YYYY to Date object
+      const [day, month, year] = targetDate.split('-');
+      const targetDateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
       const now = new Date();
       const oneYearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
       const oneYearLater = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate());
@@ -558,9 +727,14 @@ export const PrayerTimesProvider: React.FC<{ children: ReactNode }> = ({ childre
         demoDay = ((currentDay - 1) % 30) + 1;
       }
       
-      return `2025-06-${demoDay.toString().padStart(2, '0')}`;
+      return `${demoDay.toString().padStart(2, '0')}-06-2025`;
     }
-    return new Date().toISOString().split('T')[0];
+    // Return current date in DD-MM-YYYY format
+    const now = new Date();
+    const day = now.getDate().toString().padStart(2, '0');
+    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+    const year = now.getFullYear();
+    return `${day}-${month}-${year}`;
   };
 
   // Enhanced next prayer calculation
@@ -617,28 +791,28 @@ export const PrayerTimesProvider: React.FC<{ children: ReactNode }> = ({ childre
         [prayer]: minutes,
       };
       
+      // Update settings
       dispatch({ type: 'UPDATE_SETTINGS', payload: { timeAdjustments: newAdjustments } });
       await AsyncStorage.setItem('prayerSettings', JSON.stringify({ ...state.settings, timeAdjustments: newAdjustments }));
       
-      // Update current times with new adjustment
+      // Refresh current display with new adjustments (don't modify cache)
       if (state.currentTimes) {
-        const updatedTimes = {
+        const displayTimes = {
           ...state.currentTimes,
-          prayers: state.currentTimes.prayers.map(p => 
-            p.name === prayer ? { 
-              ...p, 
-              adjustment: minutes,
-              time: minutes !== 0 ? adjustTime(p.originalTime, minutes) : p.originalTime
-            } : p
-          )
+          prayers: state.currentTimes.prayers.map(p => {
+            const adjustmentValue = p.name === prayer ? minutes : (state.settings.timeAdjustments[p.name] || 0);
+            return {
+              ...p,
+              adjustment: adjustmentValue,
+              time: adjustmentValue !== 0 ? adjustTime(p.originalTime, adjustmentValue) : p.originalTime,
+            };
+          })
         };
-        dispatch({ type: 'SET_CURRENT_TIMES', payload: updatedTimes });
         
-        // Update cache
-        dispatch({ type: 'UPDATE_CACHE', payload: { date: state.currentDate, times: updatedTimes } });
+        dispatch({ type: 'SET_CURRENT_TIMES', payload: displayTimes });
         
-        // Reschedule notifications with new times
-        await scheduleAllPrayerNotifications(updatedTimes, { ...state.settings, timeAdjustments: newAdjustments });
+        // Reschedule notifications with new adjusted times
+        await scheduleAllPrayerNotifications(displayTimes, { ...state.settings, timeAdjustments: newAdjustments });
       }
     } catch (error) {
       console.error('Error updating prayer adjustment:', error);
@@ -659,12 +833,13 @@ export const PrayerTimesProvider: React.FC<{ children: ReactNode }> = ({ childre
         isha: minutes,
       };
       
+      // Update settings
       dispatch({ type: 'UPDATE_SETTINGS', payload: { timeAdjustments: newAdjustments } });
       await AsyncStorage.setItem('prayerSettings', JSON.stringify({ ...state.settings, timeAdjustments: newAdjustments }));
       
-      // Update current times with new adjustments
+      // Refresh current display with new adjustments (don't modify cache)
       if (state.currentTimes) {
-        const updatedTimes = {
+        const displayTimes = {
           ...state.currentTimes,
           prayers: state.currentTimes.prayers.map(p => ({
             ...p,
@@ -672,13 +847,11 @@ export const PrayerTimesProvider: React.FC<{ children: ReactNode }> = ({ childre
             time: minutes !== 0 ? adjustTime(p.originalTime, minutes) : p.originalTime
           }))
         };
-        dispatch({ type: 'SET_CURRENT_TIMES', payload: updatedTimes });
         
-        // Update cache
-        dispatch({ type: 'UPDATE_CACHE', payload: { date: state.currentDate, times: updatedTimes } });
+        dispatch({ type: 'SET_CURRENT_TIMES', payload: displayTimes });
         
-        // Reschedule notifications with new times
-        await scheduleAllPrayerNotifications(updatedTimes, { ...state.settings, timeAdjustments: newAdjustments });
+        // Reschedule notifications with new adjusted times
+        await scheduleAllPrayerNotifications(displayTimes, { ...state.settings, timeAdjustments: newAdjustments });
       }
     } catch (error) {
       console.error('Error applying adjustments to all prayers:', error);
@@ -692,24 +865,22 @@ export const PrayerTimesProvider: React.FC<{ children: ReactNode }> = ({ childre
         [prayer]: !state.settings.notifications[prayer],
       };
       
+      // Update settings
       dispatch({ type: 'UPDATE_SETTINGS', payload: { notifications: newNotifications } });
       await AsyncStorage.setItem('prayerSettings', JSON.stringify({ ...state.settings, notifications: newNotifications }));
       
-      // Update current times with new notification setting
+      // Update current display with new notification setting
       if (state.currentTimes) {
-        const updatedTimes = {
+        const displayTimes = {
           ...state.currentTimes,
           prayers: state.currentTimes.prayers.map(p => 
             p.name === prayer ? { ...p, notificationEnabled: newNotifications[prayer] } : p
           )
         };
-        dispatch({ type: 'SET_CURRENT_TIMES', payload: updatedTimes });
-        
-        // Update cache
-        dispatch({ type: 'UPDATE_CACHE', payload: { date: state.currentDate, times: updatedTimes } });
+        dispatch({ type: 'SET_CURRENT_TIMES', payload: displayTimes });
         
         // Reschedule notifications
-        await scheduleAllPrayerNotifications(updatedTimes, { ...state.settings, notifications: newNotifications });
+        await scheduleAllPrayerNotifications(displayTimes, { ...state.settings, notifications: newNotifications });
       }
     } catch (error) {
       console.error('Error toggling prayer notification:', error);
@@ -742,11 +913,14 @@ export const PrayerTimesProvider: React.FC<{ children: ReactNode }> = ({ childre
       }
       
       dispatch({ type: 'UPDATE_SETTINGS', payload: locationUpdate });
+      dispatch({ type: 'SET_LAST_LOCATION_CHECK', payload: 0 }); // Reset timer for immediate check next time
       await AsyncStorage.setItem('prayerSettings', JSON.stringify({ ...state.settings, ...locationUpdate }));
       
-      // Clear cache and refetch with new location
+      // Clear all caches (including month cache) and refetch with new location
       dispatch({ type: 'CLEAR_CACHE' });
       await clearPrayerTimesCache();
+      console.log(`[Location] Location changed to ${city?.name || 'auto-detected'}, clearing all caches`);
+      // Force refresh to get new data with updated location
       await fetchPrayerTimes(state.currentDate, true);
       
     } catch (error) {
@@ -757,15 +931,72 @@ export const PrayerTimesProvider: React.FC<{ children: ReactNode }> = ({ childre
 
   const enableAutoLocation = async () => {
     try {
-      const hasPermission = await requestLocationPermission();
-      if (hasPermission) {
-        await updateLocation();
-      } else {
-        throw new Error('Location permission denied');
+      dispatch({ type: 'SET_LOADING', payload: true });
+      
+      const result = await getLocationWithFallback();
+      
+      if (result.requiresManualSelection) {
+        // Show alert asking user to select location manually
+        const { Alert } = await import('react-native');
+        Alert.alert(
+          'Auto Location Unavailable',
+          result.reason || 'Unable to detect your location automatically.',
+          [
+            { text: 'OK' },
+            {
+              text: 'Select Manually',
+              onPress: () => {
+                // This will trigger the city picker modal in the settings
+                dispatch({ type: 'SET_ERROR', payload: 'Please select your city manually from the location settings.' });
+              }
+            }
+          ]
+        );
+        return;
+      }
+
+      if (result.location) {
+        // Successfully got location, update settings
+        const locationUpdate = {
+          location: {
+            ...state.settings.location,
+            type: 'auto' as const,
+            lastKnownLocation: {
+              latitude: result.location.latitude,
+              longitude: result.location.longitude,
+              city: result.location.city || 'Unknown City',
+              country: result.location.country || 'Unknown Country',
+            },
+          },
+        };
+        
+        dispatch({ type: 'UPDATE_SETTINGS', payload: locationUpdate });
+        dispatch({ type: 'SET_LAST_LOCATION_CHECK', payload: 0 }); // Reset timer for immediate check next time
+        await AsyncStorage.setItem('prayerSettings', JSON.stringify({ ...state.settings, ...locationUpdate }));
+        
+        // Get location name for logging
+        const locationName = getLocationDisplayName(result.location);
+        
+        // Clear all caches (including month cache) and refetch with new location
+        dispatch({ type: 'CLEAR_CACHE' });
+        await clearPrayerTimesCache();
+        console.log(`[Location] Auto location enabled for ${locationName}, clearing all caches`);
+        // Force refresh to get new data with updated location
+        await fetchPrayerTimes(state.currentDate, true);
+
+        // Show success message with location details
+        const { Alert } = await import('react-native');
+        Alert.alert(
+          'Location Detected',
+          `Successfully detected your location as ${locationName}. Prayer times have been updated for your location.`,
+          [{ text: 'Great!' }]
+        );
       }
     } catch (error) {
       console.error('Error enabling auto location:', error);
-      dispatch({ type: 'SET_ERROR', payload: 'Location permission required' });
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to enable auto location. Please try manual selection.' });
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
     }
   };
 
@@ -774,9 +1005,10 @@ export const PrayerTimesProvider: React.FC<{ children: ReactNode }> = ({ childre
       dispatch({ type: 'UPDATE_SETTINGS', payload: { calculationMethod: method } });
       await AsyncStorage.setItem('prayerSettings', JSON.stringify({ ...state.settings, calculationMethod: method }));
       
-      // Clear cache and refetch with new method
+      // Clear all caches and refetch with new method
       dispatch({ type: 'CLEAR_CACHE' });
       await clearPrayerTimesCache();
+      console.log(`[Settings] Calculation method changed to ${method.name}, clearing all caches`);
       await fetchPrayerTimes(state.currentDate, true);
     } catch (error) {
       console.error('Error updating calculation method:', error);
@@ -798,9 +1030,9 @@ export const PrayerTimesProvider: React.FC<{ children: ReactNode }> = ({ childre
       dispatch({ type: 'UPDATE_SETTINGS', payload: updates });
       await AsyncStorage.setItem('prayerSettings', JSON.stringify(newSettings));
       
-      // Update current times if notification settings changed
+      // Update current display if notification settings changed
       if (updates.notifications && state.currentTimes) {
-        const updatedTimes = {
+        const displayTimes = {
           ...state.currentTimes,
           prayers: state.currentTimes.prayers.map(p => ({
             ...p,
@@ -809,13 +1041,25 @@ export const PrayerTimesProvider: React.FC<{ children: ReactNode }> = ({ childre
               state.settings.notifications[p.name]
           }))
         };
-        dispatch({ type: 'SET_CURRENT_TIMES', payload: updatedTimes });
-        dispatch({ type: 'UPDATE_CACHE', payload: { date: state.currentDate, times: updatedTimes } });
+        dispatch({ type: 'SET_CURRENT_TIMES', payload: displayTimes });
       }
       
       // Reschedule notifications if notification or time adjustment settings changed
       if ((updates.notifications || updates.timeAdjustments) && state.currentTimes) {
-        await scheduleAllPrayerNotifications(state.currentTimes, newSettings);
+        // Apply current adjustments for notifications
+        const notificationTimes = {
+          ...state.currentTimes,
+          prayers: state.currentTimes.prayers.map(p => {
+            const adjustmentValue = (updates.timeAdjustments || state.settings.timeAdjustments)[p.name] || 0;
+            return {
+              ...p,
+              adjustment: adjustmentValue,
+              time: adjustmentValue !== 0 ? adjustTime(p.originalTime, adjustmentValue) : p.originalTime,
+              notificationEnabled: (updates.notifications || state.settings.notifications)[p.name]
+            };
+          })
+        };
+        await scheduleAllPrayerNotifications(notificationTimes, newSettings);
       }
     } catch (error) {
       console.error('Error updating prayer settings:', error);
@@ -853,12 +1097,136 @@ export const PrayerTimesProvider: React.FC<{ children: ReactNode }> = ({ childre
     }
   };
 
+  const resetToProduction = async () => {
+    try {
+      console.log('[PrayerTimes] Starting production reset...');
+      dispatch({ type: 'SET_LOADING', payload: true });
+      dispatch({ type: 'SET_ERROR', payload: null });
+
+      // 1. Clear ALL cached data (sample data remnants)
+      console.log('[PrayerTimes] Clearing all cached data...');
+      await clearAllProductionCache();
+      dispatch({ type: 'CLEAR_CACHE' });
+
+      // 2. Reset to current real date in DD-MM-YYYY format
+      const now = new Date();
+      const realToday = `${now.getDate().toString().padStart(2, '0')}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getFullYear()}`;
+      console.log(`[PrayerTimes] Setting real today date: ${realToday}`);
+      dispatch({ type: 'SET_CURRENT_DATE', payload: realToday });
+      dispatch({ type: 'SET_INITIAL_DATE', payload: realToday });
+
+      // 3. Try to get user's real location intelligently
+      console.log('[PrayerTimes] Attempting to get real location...');
+      try {
+        const result = await getLocationWithFallback();
+        
+        if (result.location && !result.requiresManualSelection) {
+          console.log(`[PrayerTimes] Got location: ${getLocationDisplayName(result.location)}`);
+          
+          // Update settings with real location
+          const locationUpdate = {
+            location: {
+              ...state.settings.location,
+              type: 'auto' as const,
+              lastKnownLocation: {
+                latitude: result.location.latitude,
+                longitude: result.location.longitude,
+                city: result.location.city || 'Unknown City',
+                country: result.location.country || 'Unknown Country',
+              },
+            },
+          };
+          
+          dispatch({ type: 'UPDATE_SETTINGS', payload: locationUpdate });
+          await AsyncStorage.setItem('prayerSettings', JSON.stringify({ ...state.settings, ...locationUpdate }));
+        } else {
+          console.log('[PrayerTimes] Auto location failed, using Vancouver as fallback...');
+          console.log('[PrayerTimes] Reason:', result.reason);
+          
+          // Fallback to Vancouver since user mentioned they're there
+          const vancouverLocation = {
+            location: {
+              ...state.settings.location,
+              type: 'manual' as const,
+              selectedCity: {
+                id: 'vancouver',
+                name: 'Vancouver',
+                country: 'Canada',
+                latitude: 49.2827,
+                longitude: -123.1207,
+                timezone: 'America/Vancouver',
+              },
+              lastKnownLocation: {
+                latitude: 49.2827,
+                longitude: -123.1207,
+                city: 'Vancouver',
+                country: 'Canada',
+              },
+            },
+          };
+          
+          dispatch({ type: 'UPDATE_SETTINGS', payload: vancouverLocation });
+          await AsyncStorage.setItem('prayerSettings', JSON.stringify({ ...state.settings, ...vancouverLocation }));
+        }
+      } catch (locationError) {
+        console.log('[PrayerTimes] Location error, using Vancouver fallback:', locationError);
+        
+        // Ultimate fallback to Vancouver
+        const vancouverLocation = {
+          location: {
+            ...state.settings.location,
+            type: 'manual' as const,
+            selectedCity: {
+              id: 'vancouver',
+              name: 'Vancouver',
+              country: 'Canada',
+              latitude: 49.2827,
+              longitude: -123.1207,
+              timezone: 'America/Vancouver',
+            },
+            lastKnownLocation: {
+              latitude: 49.2827,
+              longitude: -123.1207,
+              city: 'Vancouver',
+              country: 'Canada',
+            },
+          },
+        };
+        
+        dispatch({ type: 'UPDATE_SETTINGS', payload: vancouverLocation });
+        await AsyncStorage.setItem('prayerSettings', JSON.stringify({ ...state.settings, ...vancouverLocation }));
+      }
+
+      // 4. Force fetch fresh prayer times with new location and real date
+      console.log('[PrayerTimes] Fetching fresh prayer times for real location and date...');
+      await fetchPrayerTimes(realToday, true); // Force refresh
+
+      console.log('[PrayerTimes] Production reset completed successfully!');
+      
+      // Show success message
+      setTimeout(() => {
+        const { Alert } = require('react-native');
+        Alert.alert(
+          'Production Mode Active!',
+          'Successfully reset to production mode with your real location and current date. You should now see accurate prayer times for your area.',
+          [{ text: 'Great!' }]
+        );
+      }, 1000);
+
+    } catch (error) {
+      console.error('[PrayerTimes] Error during production reset:', error);
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to reset to production mode. Please try again.' });
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  };
+
   const preloadNextMonth = async () => {
     try {
       const nextMonth = new Date();
       nextMonth.setMonth(nextMonth.getMonth() + 1);
       
-      const nextMonthDate = `${nextMonth.getFullYear()}-${(nextMonth.getMonth() + 1).toString().padStart(2, '0')}-01`;
+      const nextMonthDate = `01-${(nextMonth.getMonth() + 1).toString().padStart(2, '0')}-${nextMonth.getFullYear()}`;
       await fetchMonthData(nextMonthDate, false);
     } catch (error) {
       console.error('Error preloading next month:', error);
@@ -933,6 +1301,44 @@ export const PrayerTimesProvider: React.FC<{ children: ReactNode }> = ({ childre
         if (savedSettings) {
           const parsed = JSON.parse(savedSettings);
           dispatch({ type: 'UPDATE_SETTINGS', payload: parsed });
+          
+          // Check if auto location is enabled but we're still using default London coordinates
+          if (parsed.location?.type === 'auto' && parsed.location?.lastKnownLocation) {
+            const lastKnown = parsed.location.lastKnownLocation;
+            const isDefaultLondon = Math.abs(lastKnown.latitude - 51.5074) < 0.001 && 
+                                  Math.abs(lastKnown.longitude - (-0.1278)) < 0.001;
+            
+            if (isDefaultLondon) {
+              console.log('[Location] Auto location enabled but using default London coords. Will attempt to get real location...');
+              // Clear month cache since we'll need to refetch with real location
+              dispatch({ type: 'CLEAR_CACHE' });
+              await clearPrayerTimesCache();
+              
+              // Try to get real location in background
+              setTimeout(async () => {
+                try {
+                  const result = await getLocationWithFallback();
+                  if (result.location && !result.requiresManualSelection) {
+                    console.log('[Location] Got real location on startup:', result.location);
+                    const locationUpdate = {
+                      location: {
+                        ...parsed.location,
+                        lastKnownLocation: result.location,
+                      },
+                    };
+                    
+                    dispatch({ type: 'UPDATE_SETTINGS', payload: locationUpdate });
+                    await AsyncStorage.setItem('prayerSettings', JSON.stringify({ ...parsed, ...locationUpdate }));
+                    
+                    // Refetch prayer times with real location
+                    await fetchPrayerTimes(initialDate, true);
+                  }
+                } catch (error) {
+                  console.log('[Location] Failed to get real location on startup:', error);
+                }
+              }, 2000); // Give the app time to fully initialize
+            }
+          }
         }
 
         // Initialize notifications
@@ -993,6 +1399,7 @@ export const PrayerTimesProvider: React.FC<{ children: ReactNode }> = ({ childre
     cancelAllNotifications,
     snoozeNotification,
     clearCache,
+    resetToProduction,
     preloadNextMonth,
     getNextPrayer,
     getCurrentPrayer,

@@ -1,7 +1,6 @@
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { secureLogger } from './secureLogger';
-import { aladhanApi } from './aladhanApi';
 import { City } from '../types';
 
 export interface LocationData {
@@ -9,6 +8,10 @@ export interface LocationData {
   longitude: number;
   city?: string;
   country?: string;
+  region?: string; // State/Province
+  postalCode?: string;
+  street?: string;
+  district?: string; // District/Suburb
   accuracy?: number;
   timestamp: number;
 }
@@ -80,7 +83,7 @@ export class LocationService {
   }
 
   /**
-   * Get current GPS location
+   * Get current GPS location with address information
    */
   public async getCurrentLocation(
     highAccuracy: boolean = false,
@@ -110,16 +113,39 @@ export class LocationService {
         timestamp: Date.now(),
       };
 
-      // Try to get city and country information
+      // Get address information using expo-location's built-in reverse geocoding
       try {
-        const locationInfo = await aladhanApi.getLocationFromCoordinates(
-          locationData.latitude,
-          locationData.longitude
-        );
-        locationData.city = locationInfo.city;
-        locationData.country = locationInfo.country;
+        secureLogger.info('Getting address information via reverse geocoding');
+        
+        const addresses = await Location.reverseGeocodeAsync({
+          latitude: locationData.latitude,
+          longitude: locationData.longitude,
+        });
+
+        if (addresses && addresses.length > 0) {
+          const address = addresses[0]; // Use the first (most accurate) result
+          
+          // Extract address components
+          locationData.city = address.city || address.subregion || undefined;
+          locationData.country = address.country || undefined;
+          locationData.region = address.region || undefined; // State/Province
+          locationData.postalCode = address.postalCode || undefined;
+          locationData.street = address.street || undefined;
+          locationData.district = address.district || address.subregion || undefined;
+
+          secureLogger.info('Address information obtained', {
+            city: locationData.city,
+            country: locationData.country,
+            region: locationData.region,
+            district: locationData.district
+          });
+        } else {
+          secureLogger.warn('No address information found for coordinates');
+          // If no address found, we'll still have coordinates
+        }
       } catch (error) {
-        secureLogger.warn('Failed to get location details', { error });
+        secureLogger.warn('Failed to get address information via reverse geocoding', { error });
+        // Continue without address information - coordinates are still valid
       }
 
       this.lastKnownLocation = locationData;
@@ -129,6 +155,7 @@ export class LocationService {
         latitude: locationData.latitude, 
         longitude: locationData.longitude,
         city: locationData.city,
+        country: locationData.country,
         accuracy: locationData.accuracy 
       });
 
@@ -197,14 +224,23 @@ export class LocationService {
           // Only update if significantly different from last location
           if (this.hasLocationChangedSignificantly(locationData)) {
             try {
-              const locationInfo = await aladhanApi.getLocationFromCoordinates(
-                locationData.latitude,
-                locationData.longitude
-              );
-              locationData.city = locationInfo.city;
-              locationData.country = locationInfo.country;
+              // Get address information using expo-location's reverse geocoding
+              const addresses = await Location.reverseGeocodeAsync({
+                latitude: locationData.latitude,
+                longitude: locationData.longitude,
+              });
+
+              if (addresses && addresses.length > 0) {
+                const address = addresses[0];
+                locationData.city = address.city || address.subregion || undefined;
+                locationData.country = address.country || undefined;
+                locationData.region = address.region || undefined;
+                locationData.postalCode = address.postalCode || undefined;
+                locationData.street = address.street || undefined;
+                locationData.district = address.district || address.subregion || undefined;
+              }
             } catch (error) {
-              secureLogger.warn('Failed to get location details during watch', { error });
+              secureLogger.warn('Failed to get address information during location watch', { error });
             }
 
             this.lastKnownLocation = locationData;
@@ -428,6 +464,106 @@ export class LocationService {
       return false;
     }
   }
+
+  /**
+   * Intelligent location detection with fallback to manual selection
+   * Returns location data or null if manual selection should be prompted
+   */
+  public async getLocationWithFallback(): Promise<{ location: LocationData | null; requiresManualSelection: boolean; reason?: string }> {
+    try {
+      // First check if location services are available
+      const isAvailable = await this.isLocationAvailable();
+      if (!isAvailable) {
+        return {
+          location: null,
+          requiresManualSelection: true,
+          reason: 'Location services are disabled on this device'
+        };
+      }
+
+      // Check if we have permission
+      const permission = await this.checkLocationPermission();
+      if (!permission.granted) {
+        // Try to request permission
+        const requestResult = await this.requestLocationPermission();
+        if (!requestResult.granted) {
+          return {
+            location: null,
+            requiresManualSelection: true,
+            reason: requestResult.reason || 'Location permission denied'
+          };
+        }
+      }
+
+      // Try to get current location
+      try {
+        const location = await this.getCurrentLocation(false, 10000); // 10 second timeout
+        
+        // Check if we got meaningful address information
+        if (!location.city && !location.country) {
+          secureLogger.warn('Got coordinates but no address information');
+          return {
+            location,
+            requiresManualSelection: true,
+            reason: 'Could not determine city/country from your location. Please select manually.'
+          };
+        }
+
+        return {
+          location,
+          requiresManualSelection: false
+        };
+      } catch (locationError) {
+        secureLogger.error('Failed to get current location', { error: locationError });
+        
+        // Check if we have cached location as fallback
+        const cached = await this.getCachedLocation();
+        if (cached && cached.city && cached.country) {
+          secureLogger.info('Using cached location as fallback');
+          return {
+            location: cached,
+            requiresManualSelection: false
+          };
+        }
+
+        return {
+          location: null,
+          requiresManualSelection: true,
+          reason: 'Unable to determine your location. Please select your city manually.'
+        };
+      }
+    } catch (error) {
+      secureLogger.error('Error in location detection with fallback', { error });
+      return {
+        location: null,
+        requiresManualSelection: true,
+        reason: 'Location detection failed. Please select your city manually.'
+      };
+    }
+  }
+
+  /**
+   * Get a user-friendly display name for the location
+   */
+  public getLocationDisplayName(location: LocationData): string {
+    const parts: string[] = [];
+    
+    if (location.city) {
+      parts.push(location.city);
+    } else if (location.district) {
+      parts.push(location.district);
+    }
+    
+    if (location.region && location.region !== location.city) {
+      parts.push(location.region);
+    }
+    
+    if (location.country) {
+      parts.push(location.country);
+    }
+    
+    return parts.length > 0 ? parts.join(', ') : 'Unknown Location';
+  }
 }
 
 export const locationService = LocationService.getInstance();
@@ -447,4 +583,12 @@ export const getCachedLocation = async (): Promise<LocationData | null> => {
 
 export const checkLocationPermission = async (): Promise<LocationPermissionResult> => {
   return locationService.checkLocationPermission();
+};
+
+export const getLocationWithFallback = async () => {
+  return locationService.getLocationWithFallback();
+};
+
+export const getLocationDisplayName = (location: LocationData): string => {
+  return locationService.getLocationDisplayName(location);
 }; 

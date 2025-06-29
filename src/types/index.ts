@@ -253,6 +253,7 @@ export interface PrayerTimesContextType extends PrayerTimesState {
   
   // Cache management
   clearCache: () => Promise<void>;
+  resetToProduction: () => Promise<void>;
   preloadNextMonth: () => Promise<void>;
   
   // Navigation actions

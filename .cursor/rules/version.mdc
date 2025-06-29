@@ -1,6 +1,0 @@
----
-description: 
-globs: 
-alwaysApply: true
----
-whenever version compatibilit happens use npx expo install --fix and don't try to change the version manually.

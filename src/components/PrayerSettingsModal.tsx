@@ -42,6 +42,7 @@ export default function PrayerSettingsModal({ visible, onClose }: PrayerSettings
     updateLocation,
     enableAutoLocation,
     previewAudio,
+    resetToProduction,
   } = usePrayerTimes();
 
   const { isDark } = useAppTheme();
@@ -494,6 +495,46 @@ export default function PrayerSettingsModal({ visible, onClose }: PrayerSettings
           />
           <Text style={[styles.sliderLabel, { color: COLORS.neutral.gray500 }]}>10s</Text>
         </View>
+      </View>
+
+      {/* Production Reset Section */}
+      <View style={[styles.settingSection, { backgroundColor: accessibleColors.surface }]}>
+        <Text style={[styles.sectionTitle, { color: accessibleColors.text }]}>
+          Advanced Settings
+        </Text>
+        
+        <TouchableOpacity
+          style={[styles.resetButton, { borderColor: COLORS.semantic.warning }]}
+          onPress={() => {
+            Alert.alert(
+              'Reset to Production Mode',
+              'This will clear all cached sample data and get your real location (Vancouver) with live prayer times. Are you sure?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Reset',
+                  style: 'destructive',
+                  onPress: () => {
+                    onClose(); // Close settings first
+                    setTimeout(() => {
+                      resetToProduction();
+                    }, 500);
+                  },
+                },
+              ]
+            );
+          }}
+        >
+          <Ionicons name="refresh" size={20} color={COLORS.semantic.warning} />
+          <View style={styles.resetButtonInfo}>
+            <Text style={[styles.resetButtonLabel, { color: COLORS.semantic.warning }]}>
+              Reset to Production Mode
+            </Text>
+            <Text style={[styles.resetButtonDescription, { color: COLORS.neutral.gray500 }]}>
+              Clear sample data and use real location & current date
+            </Text>
+          </View>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -1027,5 +1068,26 @@ const styles = StyleSheet.create({
   },
   playButtonActive: {
     backgroundColor: COLORS.primary.green,
+  },
+  resetButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+  },
+  resetButtonInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  resetButtonLabel: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  resetButtonDescription: {
+    fontSize: 12,
+    marginTop: 2,
   },
 }); 

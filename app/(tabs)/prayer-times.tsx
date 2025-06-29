@@ -59,13 +59,18 @@ function PrayerTimesScreenContent() {
   };
 
   const navigateToDate = async (direction: 'prev' | 'next') => {
-    const dateObj = new Date(currentDate);
+    // Parse DD-MM-YYYY format
+    const [day, month, year] = currentDate.split('-');
+    const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    
     if (direction === 'prev') {
       dateObj.setDate(dateObj.getDate() - 1);
     } else {
       dateObj.setDate(dateObj.getDate() + 1);
     }
-    const targetDate = dateObj.toISOString().split('T')[0];
+    
+    // Convert back to DD-MM-YYYY format
+    const targetDate = `${dateObj.getDate().toString().padStart(2, '0')}-${(dateObj.getMonth() + 1).toString().padStart(2, '0')}-${dateObj.getFullYear()}`;
     
     // Use context navigation for validation
     await contextNavigateToDate(targetDate);
@@ -79,17 +84,21 @@ function PrayerTimesScreenContent() {
   };
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
+    // Parse DD-MM-YYYY format
+    const [day, month, year] = dateString.split('-');
+    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    
     const currentDemoDate = getInitialDate(); // Get today's mapped demo date
-    const currentDemoDateObj = new Date(currentDemoDate);
+    const [currentDay, currentMonth, currentYear] = currentDemoDate.split('-');
+    const currentDemoDateObj = new Date(parseInt(currentYear), parseInt(currentMonth) - 1, parseInt(currentDay));
     
     const tomorrow = new Date(currentDemoDateObj);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowString = tomorrow.toISOString().split('T')[0];
+    const tomorrowString = `${tomorrow.getDate().toString().padStart(2, '0')}-${(tomorrow.getMonth() + 1).toString().padStart(2, '0')}-${tomorrow.getFullYear()}`;
     
     const yesterday = new Date(currentDemoDateObj);
     yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayString = yesterday.toISOString().split('T')[0];
+    const yesterdayString = `${yesterday.getDate().toString().padStart(2, '0')}-${(yesterday.getMonth() + 1).toString().padStart(2, '0')}-${yesterday.getFullYear()}`;
 
     // For sample data mode, show relative dates based on real current date
     if (dateString === currentDemoDate) return 'Today';

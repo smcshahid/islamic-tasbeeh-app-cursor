@@ -214,7 +214,39 @@ export const formatTime = (time: string, format: '12h' | '24h' = '24h'): string 
  * @returns Adjusted time in HH:MM format
  */
 export const adjustTime = (time: string, minutes: number): string => {
-  const [hours, mins] = time.split(':').map(Number);
+  // Input validation
+  if (!time || typeof time !== 'string') {
+    console.error('adjustTime: Invalid time input:', time);
+    return '00:00';
+  }
+  
+  if (typeof minutes !== 'number' || isNaN(minutes)) {
+    console.error('adjustTime: Invalid minutes input:', minutes);
+    return time; // Return original time if adjustment is invalid
+  }
+  
+  // Clean time string - remove timezone info like "(BST)", "(UTC)", etc.
+  const cleanTime = time.replace(/\s*\([^)]*\)\s*$/, '').trim();
+  
+  const timeParts = cleanTime.split(':');
+  if (timeParts.length !== 2) {
+    console.error('adjustTime: Invalid time format, expected HH:MM:', { original: time, cleaned: cleanTime });
+    return time;
+  }
+  
+  const [hours, mins] = timeParts.map(Number);
+  
+  // Check if parsing was successful
+  if (isNaN(hours) || isNaN(mins)) {
+    console.error('adjustTime: Failed to parse time parts:', { time, hours, mins });
+    return time;
+  }
+  
+  // Validate hour and minute ranges
+  if (hours < 0 || hours > 23 || mins < 0 || mins > 59) {
+    console.error('adjustTime: Invalid time values:', { hours, mins });
+    return time;
+  }
   
   // Apply adjustment
   const totalMinutes = hours * 60 + mins + minutes;
