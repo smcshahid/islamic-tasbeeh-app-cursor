@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
 import { usePrayerTimes } from '../contexts/PrayerTimesContext';
+import { useGlobalAction } from '../contexts/GlobalActionContext';
 import { useAppTheme } from '../utils/theme';
 import { COLORS, CalculationMethod, AdhanAudio, City, PrayerName, PRAYER_NAMES } from '../types';
 import { accessibilityManager } from '../utils/accessibility';
@@ -28,9 +29,10 @@ import {
 interface PrayerSettingsModalProps {
   visible: boolean;
   onClose: () => void;
+  initialTab?: 'general' | 'location' | 'notifications';
 }
 
-export default function PrayerSettingsModal({ visible, onClose }: PrayerSettingsModalProps) {
+export default function PrayerSettingsModal({ visible, onClose, initialTab = 'general' }: PrayerSettingsModalProps) {
   const {
     settings,
     availableMethods,
@@ -46,6 +48,7 @@ export default function PrayerSettingsModal({ visible, onClose }: PrayerSettings
   } = usePrayerTimes();
 
   const { isDark } = useAppTheme();
+  const { pendingAction, clearPendingAction } = useGlobalAction();
   const accessibleColors = accessibilityManager.getAccessibleColors(isDark ? 'dark' : 'light');
 
   const [activeTab, setActiveTab] = useState<'general' | 'location' | 'notifications'>('general');
@@ -61,6 +64,21 @@ export default function PrayerSettingsModal({ visible, onClose }: PrayerSettings
   const [localVolume, setLocalVolume] = useState<number>(typeof settings.volume === 'number' ? settings.volume : 0.7);
   const [localFadeIn, setLocalFadeIn] = useState<number>(typeof settings.fadeInDuration === 'number' ? settings.fadeInDuration : 2);
   const [localFadeOut, setLocalFadeOut] = useState<number>(typeof settings.fadeOutDuration === 'number' ? settings.fadeOutDuration : 2);
+
+  // Set initial tab when modal becomes visible
+  useEffect(() => {
+    if (visible) {
+      setActiveTab(initialTab);
+      
+      // Check if we should auto-open calculation method picker
+      if (pendingAction && pendingAction.type === 'openCalculationMethod') {
+        setTimeout(() => {
+          setShowMethodPicker(true);
+          clearPendingAction();
+        }, 500); // Small delay to let modal open first
+      }
+    }
+  }, [visible, initialTab, pendingAction, clearPendingAction]);
 
   // Listen to audio state changes
   useEffect(() => {

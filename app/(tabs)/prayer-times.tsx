@@ -14,8 +14,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import Slider from '@react-native-community/slider';
+import { useFocusEffect } from 'expo-router';
 import { usePrayerTimes } from '../../src/contexts/PrayerTimesContext';
 import { useAppTheme } from '../../src/utils/theme';
+import { useGlobalAction } from '../../src/contexts/GlobalActionContext';
 import { COLORS, PrayerName, PRAYER_NAMES } from '../../src/types';
 import { accessibilityManager } from '../../src/utils/accessibility';
 import { getPrayerDisplayTime } from '../../src/utils/helpers';
@@ -49,7 +51,9 @@ function PrayerTimesScreenContent() {
   } = usePrayerTimes();
 
   const { isDark } = useAppTheme();
+  const { pendingAction, clearPendingAction } = useGlobalAction();
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<'general' | 'location' | 'notifications'>('general');
   const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
   const [selectedPrayerForAdjustment, setSelectedPrayerForAdjustment] = useState<PrayerName | null>(null);
 
@@ -57,6 +61,37 @@ function PrayerTimesScreenContent() {
     ...accessibilityManager.getAccessibleColors(isDark ? 'dark' : 'light'),
     text: accessibilityManager.getAccessibleColors(isDark ? 'dark' : 'light').primaryText
   };
+
+  // Handle pending actions from global search
+  useFocusEffect(
+    React.useCallback(() => {
+      if (pendingAction && pendingAction.screen === '/(tabs)/prayer-times') {
+        // Execute the pending action
+        switch (pendingAction.type) {
+          case 'openPrayerSettings':
+            setSettingsInitialTab('general');
+            setShowSettings(true);
+            break;
+          case 'openPrayerNotifications':
+            setSettingsInitialTab('notifications');
+            setShowSettings(true);
+            break;
+          case 'openCalculationMethod':
+            setSettingsInitialTab('general');
+            setShowSettings(true);
+            // Note: Method picker will be handled within PrayerSettingsModal
+            break;
+          case 'adjustPrayerTimes':
+            // Show adjustment modal for the first prayer (Fajr) as default
+            setSelectedPrayerForAdjustment('fajr');
+            setShowAdjustmentModal(true);
+            break;
+        }
+        // Clear the pending action
+        clearPendingAction();
+      }
+    }, [pendingAction, clearPendingAction])
+  );
 
   const navigateToDate = async (direction: 'prev' | 'next') => {
     // Parse DD-MM-YYYY format
@@ -454,6 +489,7 @@ function PrayerTimesScreenContent() {
       <PrayerSettingsModal
         visible={showSettings}
         onClose={() => setShowSettings(false)}
+        initialTab={settingsInitialTab}
       />
 
       {/* Prayer Time Adjustment Modal */}

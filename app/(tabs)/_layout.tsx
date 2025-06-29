@@ -1,19 +1,49 @@
 import { Tabs } from 'expo-router';
+import React from 'react';
+import { View, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../../src/utils/theme';
 import { COLORS } from '../../src/types';
-import { accessibilityManager } from '../../src/utils/accessibility';
+import { accessibilityManager, getButtonA11yProps } from '../../src/utils/accessibility';
+import GlobalSearch from '../../src/components/GlobalSearch';
+import useGlobalSearch from '../../src/utils/useGlobalSearch';
+import { GlobalActionProvider } from '../../src/contexts/GlobalActionContext';
 
 export default function TabLayout() {
   const { isDark } = useAppTheme();
+  const { isSearchVisible, showSearch, hideSearch } = useGlobalSearch();
   
   // Get accessibility-aware colors
   const accessibleColors = accessibilityManager.getAccessibleColors(isDark ? 'dark' : 'light');
 
+  const SearchButton = () => (
+    <TouchableOpacity
+      style={{
+        marginRight: 16,
+        padding: 8,
+        borderRadius: 20,
+        backgroundColor: 'rgba(255,255,255,0.1)',
+      }}
+      onPress={showSearch}
+      {...getButtonA11yProps(
+        'Global Search',
+        'Search for features, screens, settings, and more throughout the app',
+        false
+      )}
+    >
+      <Ionicons name="search" size={20} color={COLORS.neutral.white} />
+    </TouchableOpacity>
+  );
+
   return (
-    <Tabs
+    <GlobalActionProvider>
+      <View style={{ flex: 1 }}>
+        <GlobalSearch
+          visible={isSearchVisible}
+          onClose={hideSearch}
+        />
+      <Tabs
       screenOptions={{
-        headerShown: false,
         tabBarActiveTintColor: COLORS.primary.green,
         tabBarInactiveTintColor: isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray500,
         tabBarStyle: {
@@ -34,6 +64,15 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Counter',
+          headerShown: true,
+          headerStyle: {
+            backgroundColor: COLORS.primary.green,
+          },
+          headerTintColor: COLORS.neutral.white,
+          headerTitleStyle: {
+            fontWeight: '600',
+          },
+          headerRight: SearchButton,
           tabBarAccessibilityLabel: 'Counter tab',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
@@ -50,6 +89,15 @@ export default function TabLayout() {
         name="prayer-times"
         options={{
           title: 'Prayer Times',
+          headerShown: true,
+          headerStyle: {
+            backgroundColor: COLORS.primary.teal,
+          },
+          headerTintColor: COLORS.neutral.white,
+          headerTitleStyle: {
+            fontWeight: '600',
+          },
+          headerRight: SearchButton,
           tabBarAccessibilityLabel: 'Prayer Times tab',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
@@ -66,6 +114,15 @@ export default function TabLayout() {
         name="history"
         options={{
           title: 'History',
+          headerShown: true,
+          headerStyle: {
+            backgroundColor: COLORS.primary.pink,
+          },
+          headerTintColor: COLORS.neutral.white,
+          headerTitleStyle: {
+            fontWeight: '600',
+          },
+          headerRight: SearchButton,
           tabBarAccessibilityLabel: 'History tab',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
@@ -82,6 +139,15 @@ export default function TabLayout() {
         name="settings"
         options={{
           title: 'Settings',
+          headerShown: true,
+          headerStyle: {
+            backgroundColor: COLORS.primary.purple,
+          },
+          headerTintColor: COLORS.neutral.white,
+          headerTitleStyle: {
+            fontWeight: '600',
+          },
+          headerRight: SearchButton,
           tabBarAccessibilityLabel: 'Settings tab',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
@@ -95,5 +161,7 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+    </View>
+    </GlobalActionProvider>
   );
 } 

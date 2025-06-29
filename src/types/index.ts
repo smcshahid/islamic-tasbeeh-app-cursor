@@ -388,4 +388,22 @@ export const PRAYER_NAMES = {
     maghrib: 'المغرب',
     isha: 'العشاء',
   },
-} as const; 
+} as const;
+
+export interface SearchResult {
+  id: string;
+  title: string;
+  subtitle?: string;
+  category: string;
+  icon: string;
+  screen?: string;
+  action?: () => void;
+  keywords: string[];
+}
+
+export interface SearchCategory {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+} 

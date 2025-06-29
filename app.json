@@ -34,8 +34,7 @@
         "android.permission.WAKE_LOCK"
       ],
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.svg",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#4CAF50"
       }
     },
     "web": {
@@ -47,8 +46,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/icon.svg",
-          "color": "#ffffff",
+          "color": "#4CAF50",
           "defaultChannel": "default",
           "sounds": ["./aladhan.mp3"]
         }

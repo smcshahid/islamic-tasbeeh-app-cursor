@@ -11,8 +11,10 @@ import {
   Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from 'expo-router';
 import { useTasbeeh } from '../../src/contexts/TasbeehContext';
 import { useAppTheme } from '../../src/utils/theme';
+import { useGlobalAction } from '../../src/contexts/GlobalActionContext';
 import { HistoryErrorBoundary } from '../../src/components/ErrorBoundary';
 import { COLORS, Session } from '../../src/types';
 
@@ -37,12 +39,35 @@ interface Achievement {
 export default function HistoryScreen() {
   const { isDark } = useAppTheme();
   const { sessions, counters } = useTasbeeh();
+  const { pendingAction, clearPendingAction } = useGlobalAction();
 
   const [filter, setFilter] = useState<FilterType>('all');
   const [sort, setSort] = useState<SortType>('newest');
   const [selectedCounterId, setSelectedCounterId] = useState<string | null>(null);
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [currentView, setCurrentView] = useState<ViewType>('history');
+
+  // Handle pending actions from global search
+  useFocusEffect(
+    React.useCallback(() => {
+      if (pendingAction && pendingAction.screen === '/(tabs)/history') {
+        // Execute the pending action
+        switch (pendingAction.type) {
+          case 'openAchievements':
+            setCurrentView('achievements');
+            break;
+          case 'openSessionHistory':
+            setCurrentView('history');
+            break;
+          case 'openStatistics':
+            setCurrentView('history'); // Statistics are part of history view
+            break;
+        }
+        // Clear the pending action
+        clearPendingAction();
+      }
+    }, [pendingAction, clearPendingAction])
+  );
 
   const formatDuration = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);

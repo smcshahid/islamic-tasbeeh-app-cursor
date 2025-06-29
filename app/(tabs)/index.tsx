@@ -15,6 +15,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTasbeeh } from '../../src/contexts/TasbeehContext';
 import { useAppTheme } from '../../src/utils/theme';
+import { useGlobalAction } from '../../src/contexts/GlobalActionContext';
+import { useFocusEffect } from 'expo-router';
 import { COLORS, Counter } from '../../src/types';
 import { APP_CONSTANTS } from '../../src/constants/app';
 import { CounterSkeleton } from '../../src/components/SkeletonLoader';
@@ -32,6 +34,7 @@ import {
 
 export default function CounterScreen() {
   const { isDark } = useAppTheme();
+  const { pendingAction, clearPendingAction } = useGlobalAction();
   const {
     currentCounter,
     counters,
@@ -58,6 +61,31 @@ export default function CounterScreen() {
   const animationConfig = getAnimationConfig();
   const fontScale = getFontScale();
   const accessibleColors = getAccessibleColors(isDark ? 'dark' : 'light');
+
+  // Handle pending actions from global search
+  useFocusEffect(
+    React.useCallback(() => {
+      if (pendingAction && pendingAction.screen === '/(tabs)/') {
+        // Execute the pending action
+        switch (pendingAction.type) {
+          case 'setCounterTarget':
+            handleSetTarget();
+            break;
+          case 'resetCounter':
+            handleReset();
+            break;
+          case 'createNewCounter':
+            setShowNewCounterModal(true);
+            break;
+          case 'openCounterSelector':
+            setShowCounterSelector(true);
+            break;
+        }
+        // Clear the pending action
+        clearPendingAction();
+      }
+    }, [pendingAction, clearPendingAction])
+  );
 
   // Update session timer
   useEffect(() => {
