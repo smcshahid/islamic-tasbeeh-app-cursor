@@ -37,7 +37,7 @@ interface Achievement {
 }
 
 export default function HistoryScreen() {
-  const { isDark } = useAppTheme();
+  const { colors, isDark } = useAppTheme();
   const { sessions, counters } = useTasbeeh();
   const { pendingAction, clearPendingAction } = useGlobalAction();
 
@@ -242,7 +242,7 @@ export default function HistoryScreen() {
         subtitle: 'Complete your first count',
         category: 'Beginner',
         isUnlocked: totalCounts >= 1,
-        color: COLORS.primary.green,
+        color: colors.islamic.green,
       },
       {
         id: 'ten_counts',
@@ -253,7 +253,7 @@ export default function HistoryScreen() {
         isUnlocked: totalCounts >= 10,
         progress: Math.min(totalCounts, 10),
         maxProgress: 10,
-        color: COLORS.primary.green,
+        color: colors.islamic.green,
       },
       {
         id: 'first_session',
@@ -262,7 +262,7 @@ export default function HistoryScreen() {
         subtitle: 'Complete your first session',
         category: 'Beginner',
         isUnlocked: totalSessions >= 1,
-        color: COLORS.primary.blue,
+        color: colors.primary,
       },
       {
         id: 'five_sessions',
@@ -273,7 +273,7 @@ export default function HistoryScreen() {
         isUnlocked: totalSessions >= 5,
         progress: Math.min(totalSessions, 5),
         maxProgress: 5,
-        color: COLORS.primary.blue,
+        color: colors.primary,
       },
       {
         id: 'hundred_counts',
@@ -284,7 +284,7 @@ export default function HistoryScreen() {
         isUnlocked: totalCounts >= 100,
         progress: Math.min(totalCounts, 100),
         maxProgress: 100,
-        color: COLORS.primary.orange,
+        color: colors.accent,
       },
 
       // INTERMEDIATE ACHIEVEMENTS (Building Habit)
@@ -762,28 +762,28 @@ export default function HistoryScreen() {
   return (
     <SafeAreaView style={[
       styles.container,
-      { backgroundColor: isDark ? COLORS.neutral.gray900 : COLORS.neutral.gray50 }
+      { backgroundColor: colors.background }
     ]}>
       <HistoryErrorBoundary>
         {/* Header */}
       <View style={styles.header}>
         <Text style={[
           styles.headerTitle,
-          { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }
+          { color: colors.text.primary }
         ]}>
           History & Statistics
         </Text>
         <TouchableOpacity
           style={[
             styles.filterButton,
-            { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.white }
+            { backgroundColor: colors.surface }
           ]}
           onPress={() => setShowFilterModal(true)}
         >
           <Ionicons 
             name="funnel" 
             size={20} 
-            color={isDark ? COLORS.neutral.white : COLORS.neutral.gray900} 
+            color={colors.text.primary} 
           />
         </TouchableOpacity>
       </View>
@@ -793,19 +793,19 @@ export default function HistoryScreen() {
         <TouchableOpacity
           style={[
             styles.switcherButton,
-            { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.white },
-            currentView === 'history' && { backgroundColor: COLORS.primary.green }
+            { backgroundColor: colors.surface },
+            currentView === 'history' && { backgroundColor: colors.primary }
           ]}
           onPress={() => setCurrentView('history')}
         >
           <Ionicons 
             name="time" 
             size={20} 
-            color={currentView === 'history' ? COLORS.neutral.white : (isDark ? COLORS.neutral.white : COLORS.neutral.gray900)} 
+            color={currentView === 'history' ? colors.text.onPrimary : colors.text.primary} 
           />
           <Text style={[
             styles.switcherText,
-            { color: currentView === 'history' ? COLORS.neutral.white : (isDark ? COLORS.neutral.white : COLORS.neutral.gray900) }
+            { color: currentView === 'history' ? colors.text.onPrimary : colors.text.primary }
           ]}>
             History
           </Text>
@@ -814,19 +814,19 @@ export default function HistoryScreen() {
         <TouchableOpacity
           style={[
             styles.switcherButton,
-            { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.white },
-            currentView === 'achievements' && { backgroundColor: COLORS.primary.green }
+            { backgroundColor: colors.surface },
+            currentView === 'achievements' && { backgroundColor: colors.primary }
           ]}
           onPress={() => setCurrentView('achievements')}
         >
           <Ionicons 
             name="trophy" 
             size={20} 
-            color={currentView === 'achievements' ? COLORS.neutral.white : (isDark ? COLORS.neutral.white : COLORS.neutral.gray900)} 
+            color={currentView === 'achievements' ? colors.text.onPrimary : colors.text.primary} 
           />
           <Text style={[
             styles.switcherText,
-            { color: currentView === 'achievements' ? COLORS.neutral.white : (isDark ? COLORS.neutral.white : COLORS.neutral.gray900) }
+            { color: currentView === 'achievements' ? colors.text.onPrimary : colors.text.primary }
           ]}>
             Achievements ({achievements.filter(a => a.isUnlocked).length})
           </Text>
@@ -840,17 +840,17 @@ export default function HistoryScreen() {
             <View style={styles.statsContainer}>
               <View style={[
                 styles.statCard,
-                { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.white }
+                { backgroundColor: colors.card }
               ]}>
                 <Text style={[
                   styles.statValue,
-                  { color: COLORS.primary.green }
+                  { color: colors.islamic.green }
                 ]}>
                   {statistics.totalSessions}
                 </Text>
                 <Text style={[
                   styles.statLabel,
-                  { color: isDark ? COLORS.neutral.gray300 : COLORS.neutral.gray600 }
+                  { color: colors.text.secondary }
                 ]}>
                   Total Sessions
                 </Text>
@@ -858,17 +858,17 @@ export default function HistoryScreen() {
 
               <View style={[
                 styles.statCard,
-                { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.white }
+                { backgroundColor: colors.card }
               ]}>
                 <Text style={[
                   styles.statValue,
-                  { color: COLORS.primary.blue }
+                  { color: colors.primary }
                 ]}>
                   {statistics.totalCounts.toLocaleString()}
                 </Text>
                 <Text style={[
                   styles.statLabel,
-                  { color: isDark ? COLORS.neutral.gray300 : COLORS.neutral.gray600 }
+                  { color: colors.text.secondary }
                 ]}>
                   Total Counts
                 </Text>
@@ -876,17 +876,17 @@ export default function HistoryScreen() {
 
               <View style={[
                 styles.statCard,
-                { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.white }
+                { backgroundColor: colors.card }
               ]}>
                 <Text style={[
                   styles.statValue,
-                  { color: COLORS.primary.purple }
+                  { color: colors.islamic.navy }
                 ]}>
                   {formatDuration(statistics.totalTime)}
                 </Text>
                 <Text style={[
                   styles.statLabel,
-                  { color: isDark ? COLORS.neutral.gray300 : COLORS.neutral.gray600 }
+                  { color: colors.text.secondary }
                 ]}>
                   Total Time
                 </Text>
@@ -894,17 +894,17 @@ export default function HistoryScreen() {
 
               <View style={[
                 styles.statCard,
-                { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.white }
+                { backgroundColor: colors.card }
               ]}>
                 <Text style={[
                   styles.statValue,
-                  { color: COLORS.primary.orange }
+                  { color: colors.accent }
                 ]}>
                   {formatDuration(statistics.averageSessionTime)}
                 </Text>
                 <Text style={[
                   styles.statLabel,
-                  { color: isDark ? COLORS.neutral.gray300 : COLORS.neutral.gray600 }
+                  { color: colors.text.secondary }
                 ]}>
                   Avg Session
                 </Text>

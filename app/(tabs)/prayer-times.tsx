@@ -50,17 +50,12 @@ function PrayerTimesScreenContent() {
     getInitialDate,
   } = usePrayerTimes();
 
-  const { isDark } = useAppTheme();
+  const { colors } = useAppTheme();
   const { pendingAction, clearPendingAction } = useGlobalAction();
   const [showSettings, setShowSettings] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'general' | 'location' | 'notifications'>('general');
   const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
   const [selectedPrayerForAdjustment, setSelectedPrayerForAdjustment] = useState<PrayerName | null>(null);
-
-  const accessibleColors = {
-    ...accessibilityManager.getAccessibleColors(isDark ? 'dark' : 'light'),
-    text: accessibilityManager.getAccessibleColors(isDark ? 'dark' : 'light').primaryText
-  };
 
   // Handle pending actions from global search
   useFocusEffect(
@@ -222,13 +217,13 @@ function PrayerTimesScreenContent() {
   const getStatusColor = (status: string | null) => {
     switch (status) {
       case 'passed':
-        return COLORS.neutral.gray400;
+        return colors.text.tertiary;
       case 'next':
-        return COLORS.primary.green;
+        return colors.primary;
       case 'upcoming':
-        return accessibleColors.text;
+        return colors.text.primary;
       default:
-        return accessibleColors.text;
+        return colors.text.primary;
     }
   };
 
@@ -267,18 +262,18 @@ function PrayerTimesScreenContent() {
   // Only show full-screen error if we have no prayer times at all
   if (error && !currentTimes) {
     return (
-      <View style={[styles.container, { backgroundColor: accessibleColors.background }]}>
-        <StatusBar style={isDark ? 'light' : 'dark'} />
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <StatusBar style="auto" />
         <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle" size={48} color={COLORS.semantic.error} />
-          <Text style={[styles.errorText, { color: accessibleColors.text }]}>
+          <Ionicons name="alert-circle" size={48} color={colors.error} />
+          <Text style={[styles.errorText, { color: colors.text.primary }]}>
             {error}
           </Text>
           <TouchableOpacity
-            style={[styles.retryButton, { backgroundColor: COLORS.primary.green }]}
+            style={[styles.retryButton, { backgroundColor: colors.primary }]}
             onPress={() => fetchPrayerTimes(currentDate, true)}
           >
-            <Text style={styles.retryButtonText}>Retry</Text>
+            <Text style={[styles.retryButtonText, { color: colors.text.onPrimary }]}>Retry</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -286,12 +281,12 @@ function PrayerTimesScreenContent() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: accessibleColors.background }]}>
-      <StatusBar style={isDark ? 'light' : 'dark'} />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar style="auto" />
       
       {/* Header */}
       <LinearGradient
-        colors={isDark ? [COLORS.neutral.gray800, COLORS.neutral.gray700] : [COLORS.primary.green, COLORS.primary.teal]}
+        colors={[colors.primary, colors.secondary]}
         style={styles.header}
       >
         <View style={styles.headerContent}>
@@ -301,13 +296,13 @@ function PrayerTimesScreenContent() {
               onPress={() => navigateToDate('prev')}
               accessibilityLabel="Previous day"
             >
-              <Ionicons name="chevron-back" size={24} color={COLORS.neutral.white} />
+              <Ionicons name="chevron-back" size={24} color={colors.text.onPrimary} />
             </TouchableOpacity>
 
             <View style={styles.dateContainer}>
-              <Text style={styles.dateText}>{formatDate(currentDate)}</Text>
+              <Text style={[styles.dateText, { color: colors.text.onPrimary }]}>{formatDate(currentDate)}</Text>
               {currentTimes && (
-                <Text style={styles.hijriDateText}>
+                <Text style={[styles.hijriDateText, { color: colors.text.onPrimary }]}>
                   {formatHijriDate(currentTimes.hijriDate)}
                 </Text>
               )}
@@ -318,7 +313,7 @@ function PrayerTimesScreenContent() {
               onPress={() => navigateToDate('next')}
               accessibilityLabel="Next day"
             >
-              <Ionicons name="chevron-forward" size={24} color={COLORS.neutral.white} />
+              <Ionicons name="chevron-forward" size={24} color={colors.text.onPrimary} />
             </TouchableOpacity>
           </View>
 
@@ -328,7 +323,7 @@ function PrayerTimesScreenContent() {
               onPress={goToToday}
               accessibilityLabel="Go to today's date"
             >
-              <Text style={styles.todayButtonText}>Today</Text>
+              <Text style={[styles.todayButtonText, { color: colors.text.onPrimary }]}>Today</Text>
             </TouchableOpacity>
             
             <TouchableOpacity
@@ -336,7 +331,7 @@ function PrayerTimesScreenContent() {
               onPress={() => setShowSettings(true)}
               accessibilityLabel="Prayer settings"
             >
-              <Ionicons name="settings" size={20} color={COLORS.neutral.white} />
+              <Ionicons name="settings" size={20} color={colors.text.onPrimary} />
             </TouchableOpacity>
           </View>
         </View>
@@ -344,14 +339,14 @@ function PrayerTimesScreenContent() {
         {/* Location Info */}
         {currentTimes && (
           <View style={styles.locationContainer}>
-            <Ionicons name="location" size={16} color={COLORS.neutral.white} />
-            <Text style={styles.locationText}>
+            <Ionicons name="location" size={16} color={colors.text.onPrimary} />
+            <Text style={[styles.locationText, { color: colors.text.onPrimary }]}>
               {currentTimes.location.city}, {currentTimes.location.country}
             </Text>
             {!isOnline && (
               <View style={styles.offlineIndicator}>
-                <Ionicons name="cloud-offline" size={16} color={COLORS.semantic.warning} />
-                <Text style={styles.offlineText}>Offline</Text>
+                <Ionicons name="cloud-offline" size={16} color={colors.warning} />
+                <Text style={[styles.offlineText, { color: colors.warning }]}>Offline</Text>
               </View>
             )}
           </View>
@@ -360,21 +355,21 @@ function PrayerTimesScreenContent() {
 
       {/* Next Prayer Info */}
       {nextPrayer && (
-        <View style={[styles.nextPrayerContainer, { backgroundColor: accessibleColors.surface }]}>
+        <View style={[styles.nextPrayerContainer, { backgroundColor: colors.surface }]}>
           <View style={styles.nextPrayerContent}>
             <View>
-              <Text style={[styles.nextPrayerLabel, { color: COLORS.neutral.gray500 }]}>
+              <Text style={[styles.nextPrayerLabel, { color: colors.text.secondary }]}>
                 Next Prayer
               </Text>
-              <Text style={[styles.nextPrayerName, { color: accessibleColors.text }]}>
+              <Text style={[styles.nextPrayerName, { color: colors.text.primary }]}>
                 {PRAYER_NAMES.en[nextPrayer.name]}
               </Text>
             </View>
             <View style={styles.nextPrayerTime}>
-              <Text style={[styles.nextPrayerTimeText, { color: COLORS.primary.green }]}>
+              <Text style={[styles.nextPrayerTimeText, { color: colors.primary }]}>
                 {getPrayerDisplayTime({time: nextPrayer.time, adjustment: 0}, settings.timeFormat).displayTime}
               </Text>
-              <Text style={[styles.nextPrayerCountdown, { color: COLORS.neutral.gray500 }]}>
+              <Text style={[styles.nextPrayerCountdown, { color: colors.text.secondary }]}>
                 in {nextPrayer.timeUntil}
               </Text>
             </View>
@@ -389,7 +384,7 @@ function PrayerTimesScreenContent() {
           <RefreshControl
             refreshing={isLoading}
             onRefresh={handleRefresh}
-            tintColor={COLORS.primary.green}
+            tintColor={colors.primary}
           />
         }
       >
@@ -406,7 +401,7 @@ function PrayerTimesScreenContent() {
                   key={prayer.name}
                   style={[
                     styles.prayerRow,
-                    { backgroundColor: accessibleColors.surface },
+                    { backgroundColor: colors.surface },
                     status === 'next' && styles.nextPrayerRow,
                   ]}
                   onPress={() => handlePrayerPress(prayer.name)}
@@ -436,9 +431,9 @@ function PrayerTimesScreenContent() {
                             <Ionicons
                               name="time"
                               size={12}
-                              color={COLORS.semantic.warning}
+                              color={colors.warning}
                             />
-                            <Text style={styles.adjustmentText}>
+                            <Text style={[styles.adjustmentText, { color: colors.warning }]}>
                               {prayer.adjustment > 0 ? '+' : ''}{prayer.adjustment}m
                             </Text>
                           </View>
@@ -447,7 +442,7 @@ function PrayerTimesScreenContent() {
                         <Ionicons
                           name={prayer.notificationEnabled ? 'notifications' : 'notifications-off'}
                           size={16}
-                          color={prayer.notificationEnabled ? COLORS.primary.green : COLORS.neutral.gray400}
+                          color={prayer.notificationEnabled ? colors.primary : colors.text.tertiary}
                         />
                       </View>
                     </View>
@@ -458,7 +453,7 @@ function PrayerTimesScreenContent() {
           </View>
         ) : (
           <View style={styles.loadingContainer}>
-            <Text style={[styles.loadingText, { color: accessibleColors.text }]}>
+            <Text style={[styles.loadingText, { color: colors.text.primary }]}>
               {isLoading ? 'Loading prayer times...' : 'No prayer times available'}
             </Text>
           </View>
@@ -466,17 +461,17 @@ function PrayerTimesScreenContent() {
 
         {/* Calculation Method Info */}
         {currentTimes && (
-          <View style={[styles.methodContainer, { backgroundColor: accessibleColors.surface }]}>
+          <View style={[styles.methodContainer, { backgroundColor: colors.surface }]}>
             <View style={styles.methodHeader}>
-              <Ionicons name="information-circle" size={20} color={COLORS.neutral.gray500} />
-              <Text style={[styles.methodTitle, { color: accessibleColors.text }]}>
+              <Ionicons name="information-circle" size={20} color={colors.text.secondary} />
+              <Text style={[styles.methodTitle, { color: colors.text.primary }]}>
                 Calculation Method
               </Text>
             </View>
-            <Text style={[styles.methodName, { color: COLORS.neutral.gray500 }]}>
+            <Text style={[styles.methodName, { color: colors.text.secondary }]}>
               {currentTimes.method.name}
             </Text>
-            <Text style={[styles.methodDescription, { color: COLORS.neutral.gray400 }]}>
+            <Text style={[styles.methodDescription, { color: colors.text.tertiary }]}>
               {currentTimes.method.description}
             </Text>
           </View>
@@ -501,7 +496,7 @@ function PrayerTimesScreenContent() {
           onConfirmAll={handleAdjustmentConfirmAll}
           prayer={selectedPrayerForAdjustment}
           currentAdjustment={settings.timeAdjustments[selectedPrayerForAdjustment]}
-          isDark={isDark}
+
         />
       )}
 
@@ -547,11 +542,9 @@ const styles = StyleSheet.create({
   dateText: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: COLORS.neutral.white,
   },
   hijriDateText: {
     fontSize: 14,
-    color: COLORS.neutral.gray200,
     marginTop: 2,
   },
   headerActions: {
@@ -566,7 +559,6 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   todayButtonText: {
-    color: COLORS.neutral.white,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -581,7 +573,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   locationText: {
-    color: COLORS.neutral.white,
     fontSize: 14,
     marginLeft: 4,
   },
@@ -591,7 +582,6 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
   offlineText: {
-    color: COLORS.semantic.warning,
     fontSize: 12,
     marginLeft: 4,
   },
@@ -647,7 +637,6 @@ const styles = StyleSheet.create({
   },
   nextPrayerRow: {
     borderWidth: 2,
-    borderColor: COLORS.primary.green,
   },
   prayerInfo: {
     flexDirection: 'row',
@@ -689,7 +678,6 @@ const styles = StyleSheet.create({
   },
   adjustmentText: {
     fontSize: 10,
-    color: COLORS.semantic.warning,
     marginLeft: 2,
     fontWeight: '600',
   },
@@ -748,7 +736,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   retryButtonText: {
-    color: COLORS.neutral.white,
     fontSize: 16,
     fontWeight: '600',
   },

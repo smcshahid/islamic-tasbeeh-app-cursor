@@ -33,7 +33,7 @@ import {
 } from '../../src/utils/accessibility';
 
 export default function CounterScreen() {
-  const { isDark } = useAppTheme();
+  const { colors } = useAppTheme();
   const { pendingAction, clearPendingAction } = useGlobalAction();
   const {
     currentCounter,
@@ -60,7 +60,6 @@ export default function CounterScreen() {
   const counterRef = useRef<View>(null);
   const animationConfig = getAnimationConfig();
   const fontScale = getFontScale();
-  const accessibleColors = getAccessibleColors(isDark ? 'dark' : 'light');
 
   // Handle pending actions from global search
   useFocusEffect(
@@ -181,7 +180,7 @@ export default function CounterScreen() {
 
   if (isLoading) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: isDark ? COLORS.neutral.gray900 : COLORS.neutral.gray50 }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <CounterSkeleton />
       </SafeAreaView>
     );
@@ -189,9 +188,9 @@ export default function CounterScreen() {
 
   if (!currentCounter) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: isDark ? COLORS.neutral.gray900 : COLORS.neutral.gray50 }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.loadingContainer}>
-          <Text style={[styles.loadingText, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}>
+          <Text style={[styles.loadingText, { color: colors.text.primary }]}>
             No counter available
           </Text>
         </View>
@@ -200,7 +199,7 @@ export default function CounterScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: isDark ? COLORS.neutral.gray900 : COLORS.neutral.gray50 }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <CounterErrorBoundary>
         <LinearGradient
           colors={[currentCounter.color, currentCounter.color + '80']}
@@ -216,12 +215,12 @@ export default function CounterScreen() {
               'Opens counter selection menu'
             )}
           >
-            <Text style={styles.counterName}>{currentCounter.name}</Text>
-            <Ionicons name="chevron-down" size={20} color={COLORS.neutral.white} />
+            <Text style={[styles.counterName, { color: colors.text.onPrimary }]}>{currentCounter.name}</Text>
+            <Ionicons name="chevron-down" size={20} color={colors.text.onPrimary} />
           </TouchableOpacity>
           
           <Text 
-            style={styles.sessionTimer}
+            style={[styles.sessionTimer, { color: colors.text.onPrimary }]}
             {...getCounterA11yProps(0, `Session time ${sessionTime}`, undefined)}
             accessibilityLabel={`Current session duration: ${sessionTime}`}
             accessibilityRole="timer"
@@ -244,12 +243,15 @@ export default function CounterScreen() {
               <View
                 style={[
                   styles.progressFill,
-                  { width: `${getProgressPercentage()}%` }
+                  { 
+                    width: `${getProgressPercentage()}%`,
+                    backgroundColor: colors.text.onPrimary
+                  }
                 ]}
               />
             </View>
             <Text 
-              style={styles.progressText}
+              style={[styles.progressText, { color: colors.text.onPrimary }]}
               accessibilityLabel={`Progress: ${currentCounter.count} out of ${currentCounter.target} completed. ${getProgressPercentage().toFixed(0)} percent complete.`}
             >
               {currentCounter.count} / {currentCounter.target}
@@ -283,14 +285,17 @@ export default function CounterScreen() {
           <Text 
             style={[
               styles.counterValue,
-              { fontSize: 72 * fontScale }
+              { 
+                fontSize: 72 * fontScale,
+                color: colors.text.onPrimary
+              }
             ]}
             accessibilityElementsHidden={true}
           >
             {currentCounter.count.toLocaleString()}
           </Text>
           <Text 
-            style={styles.tapInstruction}
+            style={[styles.tapInstruction, { color: colors.text.onPrimary }]}
             accessibilityElementsHidden={true}
           >
             Tap to count
@@ -308,8 +313,8 @@ export default function CounterScreen() {
               false
             )}
           >
-            <Ionicons name="refresh" size={24} color={COLORS.neutral.white} />
-            <Text style={styles.actionButtonText}>Reset</Text>
+            <Ionicons name="refresh" size={24} color={colors.text.onPrimary} />
+            <Text style={[styles.actionButtonText, { color: colors.text.onPrimary }]}>Reset</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -323,8 +328,8 @@ export default function CounterScreen() {
               false
             )}
           >
-            <Ionicons name="flag" size={24} color={COLORS.neutral.white} />
-            <Text style={styles.actionButtonText}>Target</Text>
+            <Ionicons name="flag" size={24} color={colors.text.onPrimary} />
+            <Text style={[styles.actionButtonText, { color: colors.text.onPrimary }]}>Target</Text>
           </TouchableOpacity>
         </View>
       </LinearGradient>
@@ -336,13 +341,13 @@ export default function CounterScreen() {
         animationType="slide"
         presentationStyle="pageSheet"
       >
-        <SafeAreaView style={[styles.modalContainer, { backgroundColor: isDark ? COLORS.neutral.gray900 : COLORS.neutral.white }]}>
+        <SafeAreaView style={[styles.modalContainer, { backgroundColor: colors.background }]}>
           <View style={styles.modalHeader}>
-            <Text style={[styles.modalTitle, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}>
+            <Text style={[styles.modalTitle, { color: colors.text.primary }]}>
               Select Counter
             </Text>
             <TouchableOpacity onPress={() => setShowCounterSelector(false)}>
-              <Ionicons name="close" size={24} color={isDark ? COLORS.neutral.white : COLORS.neutral.gray900} />
+              <Ionicons name="close" size={24} color={colors.text.primary} />
             </TouchableOpacity>
           </View>
 
@@ -352,7 +357,7 @@ export default function CounterScreen() {
                 key={counter.id}
                 style={[
                   styles.counterItem,
-                  { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.gray100 },
+                  { backgroundColor: colors.surface },
                   currentCounter.id === counter.id && styles.selectedCounterItem
                 ]}
                 onPress={() => {
@@ -362,10 +367,10 @@ export default function CounterScreen() {
               >
                 <View style={[styles.counterColor, { backgroundColor: counter.color }]} />
                 <View style={styles.counterInfo}>
-                  <Text style={[styles.counterItemName, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}>
+                  <Text style={[styles.counterItemName, { color: colors.text.primary }]}>
                     {counter.name}
                   </Text>
-                  <Text style={[styles.counterItemCount, { color: isDark ? COLORS.neutral.gray300 : COLORS.neutral.gray600 }]}>
+                  <Text style={[styles.counterItemCount, { color: colors.text.secondary }]}>
                     Count: {counter.count.toLocaleString()}
                   </Text>
                 </View>
@@ -374,14 +379,14 @@ export default function CounterScreen() {
           </ScrollView>
 
           <TouchableOpacity
-            style={[styles.addCounterButton, { backgroundColor: COLORS.primary.green }]}
+            style={[styles.addCounterButton, { backgroundColor: colors.primary }]}
             onPress={() => {
               setShowCounterSelector(false);
               setShowNewCounterModal(true);
             }}
           >
-            <Ionicons name="add" size={24} color={COLORS.neutral.white} />
-            <Text style={styles.addCounterButtonText}>Add New Counter</Text>
+            <Ionicons name="add" size={24} color={colors.text.onPrimary} />
+            <Text style={[styles.addCounterButtonText, { color: colors.text.onPrimary }]}>Add New Counter</Text>
           </TouchableOpacity>
         </SafeAreaView>
       </Modal>
@@ -392,53 +397,55 @@ export default function CounterScreen() {
         animationType="slide"
         presentationStyle="pageSheet"
       >
-        <SafeAreaView style={[styles.modalContainer, { backgroundColor: isDark ? COLORS.neutral.gray900 : COLORS.neutral.white }]}>
+        <SafeAreaView style={[styles.modalContainer, { backgroundColor: colors.background }]}>
           <View style={styles.modalHeader}>
-            <Text style={[styles.modalTitle, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}>
+            <Text style={[styles.modalTitle, { color: colors.text.primary }]}>
               New Counter
             </Text>
             <TouchableOpacity onPress={() => setShowNewCounterModal(false)}>
-              <Ionicons name="close" size={24} color={isDark ? COLORS.neutral.white : COLORS.neutral.gray900} />
+              <Ionicons name="close" size={24} color={colors.text.primary} />
             </TouchableOpacity>
           </View>
 
           <View style={styles.newCounterForm}>
-            <Text style={[styles.inputLabel, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}>
+            <Text style={[styles.inputLabel, { color: colors.text.primary }]}>
               Counter Name
             </Text>
             <TextInput
               style={[
                 styles.textInput,
                 {
-                  backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.gray100,
-                  color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900,
+                  backgroundColor: colors.surface,
+                  color: colors.text.primary,
+                  borderColor: colors.border,
                 }
               ]}
               value={newCounterName}
               onChangeText={setNewCounterName}
               placeholder="Enter counter name"
-              placeholderTextColor={isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray500}
+              placeholderTextColor={colors.text.tertiary}
             />
 
-            <Text style={[styles.inputLabel, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}>
+            <Text style={[styles.inputLabel, { color: colors.text.primary }]}>
               Target (Optional)
             </Text>
             <TextInput
               style={[
                 styles.textInput,
                 {
-                  backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.gray100,
-                  color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900,
+                  backgroundColor: colors.surface,
+                  color: colors.text.primary,
+                  borderColor: colors.border,
                 }
               ]}
               value={newCounterTarget}
               onChangeText={setNewCounterTarget}
               placeholder="Enter target count"
-              placeholderTextColor={isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray500}
+              placeholderTextColor={colors.text.tertiary}
               keyboardType="numeric"
             />
 
-            <Text style={[styles.inputLabel, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}>
+            <Text style={[styles.inputLabel, { color: colors.text.primary }]}>
               Color
             </Text>
             <View style={styles.colorPicker}>
@@ -459,7 +466,7 @@ export default function CounterScreen() {
               style={[styles.createButton, { backgroundColor: selectedColor }]}
               onPress={handleCreateCounter}
             >
-              <Text style={styles.createButtonText}>Create Counter</Text>
+              <Text style={[styles.createButtonText, { color: colors.text.onPrimary }]}>Create Counter</Text>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -472,27 +479,24 @@ export default function CounterScreen() {
         presentationStyle="pageSheet"
       >
         <LinearGradient
-          colors={isDark 
-            ? ['#1f2937', '#111827', '#0f172a'] 
-            : ['#f8fafc', '#f1f5f9', '#e2e8f0']
-          }
+          colors={[colors.background, colors.surface, colors.card]}
           style={styles.targetModalGradient}
         >
           <SafeAreaView style={styles.targetModalContainer}>
             {/* Header */}
             <View style={styles.targetModalHeader}>
               <View style={styles.targetModalHeaderContent}>
-                <Text style={[styles.targetModalTitle, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}>
+                <Text style={[styles.targetModalTitle, { color: colors.text.primary }]}>
                   Set Target
                 </Text>
                 <TouchableOpacity 
-                  style={[styles.closeButton, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }]}
+                  style={[styles.closeButton, { backgroundColor: colors.surface }]}
                   onPress={() => setShowTargetModal(false)}
                 >
-                  <Ionicons name="close" size={20} color={isDark ? COLORS.neutral.white : COLORS.neutral.gray900} />
+                  <Ionicons name="close" size={20} color={colors.text.primary} />
                 </TouchableOpacity>
               </View>
-              <Text style={[styles.targetModalSubtitle, { color: isDark ? COLORS.neutral.gray300 : COLORS.neutral.gray600 }]}>
+              <Text style={[styles.targetModalSubtitle, { color: colors.text.secondary }]}>
                 Choose your target count for {currentCounter?.name}
               </Text>
             </View>
@@ -500,15 +504,15 @@ export default function CounterScreen() {
             <ScrollView style={styles.targetModalContent} showsVerticalScrollIndicator={false}>
               {/* Counter Info Card */}
               <View style={[styles.counterInfoCard, { 
-                backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.8)',
-                borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
+                backgroundColor: colors.card,
+                borderColor: colors.border
               }]}>
                 <View style={[styles.counterColorIndicator, { backgroundColor: currentCounter?.color }]} />
                 <View style={styles.counterInfoText}>
-                  <Text style={[styles.counterInfoName, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}>
+                  <Text style={[styles.counterInfoName, { color: colors.text.primary }]}>
                     {currentCounter?.name}
                   </Text>
-                  <Text style={[styles.counterInfoCount, { color: isDark ? COLORS.neutral.gray300 : COLORS.neutral.gray600 }]}>
+                  <Text style={[styles.counterInfoCount, { color: colors.text.secondary }]}>
                     Current: {currentCounter?.count.toLocaleString()}
                   </Text>
                 </View>
@@ -516,20 +520,20 @@ export default function CounterScreen() {
 
               {/* Preset Targets Section */}
               <View style={styles.presetSection}>
-                <Text style={[styles.sectionTitle, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}>
+                <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
                   Popular Targets
                 </Text>
                 <View style={styles.presetTargetsGrid}>
                   {[APP_CONSTANTS.ISLAMIC.TASBIH_COUNT, APP_CONSTANTS.ISLAMIC.ASMA_UL_HUSNA, APP_CONSTANTS.ISLAMIC.MILESTONE_100, APP_CONSTANTS.ISLAMIC.MILESTONE_300, APP_CONSTANTS.ISLAMIC.MILESTONE_500, APP_CONSTANTS.ISLAMIC.MILESTONE_1000].map((preset) => (
                     <TouchableOpacity
                       key={preset}
-                      style={[
+                                              style={[
                         styles.presetTargetCard,
                         { 
-                          backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : COLORS.neutral.white,
+                          backgroundColor: colors.card,
                           borderColor: parseInt(targetValue) === preset 
                             ? currentCounter?.color 
-                            : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)')
+                            : colors.border
                         },
                         parseInt(targetValue) === preset && {
                           backgroundColor: currentCounter?.color + '20',
@@ -545,12 +549,12 @@ export default function CounterScreen() {
                         { 
                           color: parseInt(targetValue) === preset 
                             ? currentCounter?.color 
-                            : (isDark ? COLORS.neutral.white : COLORS.neutral.gray900)
+                            : colors.text.primary
                         }
                       ]}>
                         {preset}
                       </Text>
-                      <Text style={[styles.presetTargetLabel, { color: isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray600 }]}>
+                      <Text style={[styles.presetTargetLabel, { color: colors.text.secondary }]}>
                         {preset === APP_CONSTANTS.ISLAMIC.TASBIH_COUNT ? 'Tasbih' : preset === APP_CONSTANTS.ISLAMIC.ASMA_UL_HUSNA ? 'Asma ul Husna' : 'Target'}
                       </Text>
                     </TouchableOpacity>
@@ -560,24 +564,24 @@ export default function CounterScreen() {
 
               {/* Custom Target Section */}
               <View style={styles.customSection}>
-                <Text style={[styles.sectionTitle, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}>
+                <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
                   Custom Target
                 </Text>
                 <View style={[styles.customInputCard, { 
-                  backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : COLORS.neutral.white,
-                  borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
+                  backgroundColor: colors.card,
+                  borderColor: colors.border
                 }]}>
                   <TextInput
                     style={[
                       styles.customTargetInput,
                       {
-                        color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900,
+                        color: colors.text.primary,
                       }
                     ]}
                     value={targetValue}
                     onChangeText={setTargetValue}
                     placeholder="Enter any number"
-                    placeholderTextColor={isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray500}
+                    placeholderTextColor={colors.text.tertiary}
                     keyboardType="numeric"
                   />
                 </View>
@@ -586,47 +590,47 @@ export default function CounterScreen() {
 
             {/* Action Buttons */}
             <View style={[styles.targetActionButtonsContainer, { 
-              backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.8)',
-              borderTopColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
+              backgroundColor: colors.surface,
+              borderTopColor: colors.border
             }]}>
               <TouchableOpacity
                 style={[styles.actionBtn, styles.cancelBtn, { 
                   backgroundColor: 'transparent',
-                  borderColor: isDark ? COLORS.neutral.gray600 : COLORS.neutral.gray300
+                  borderColor: colors.border
                 }]}
                 onPress={() => setShowTargetModal(false)}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.actionBtnText, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray700 }]}>
+                <Text style={[styles.actionBtnText, { color: colors.text.primary }]}>
                   Cancel
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.actionBtn, styles.removeBtn]}
+                style={[styles.actionBtn, styles.removeBtn, { backgroundColor: colors.error }]}
                 onPress={() => {
                   setTargetValue('');
                   handleSaveTarget();
                 }}
                 activeOpacity={0.7}
               >
-                <Ionicons name="trash-outline" size={18} color={COLORS.neutral.white} />
-                <Text style={styles.actionBtnText}>Remove</Text>
+                <Ionicons name="trash-outline" size={18} color={colors.text.onPrimary} />
+                <Text style={[styles.actionBtnText, { color: colors.text.onPrimary }]}>Remove</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[
                   styles.actionBtn, 
                   styles.setBtn, 
-                  { backgroundColor: currentCounter?.color || COLORS.primary.green },
+                  { backgroundColor: currentCounter?.color || colors.primary },
                   !targetValue.trim() && { opacity: 0.5 }
                 ]}
                 onPress={handleSaveTarget}
                 disabled={!targetValue.trim()}
                 activeOpacity={0.8}
               >
-                <Ionicons name="checkmark" size={18} color={COLORS.neutral.white} />
-                <Text style={styles.actionBtnText}>Set Target</Text>
+                <Ionicons name="checkmark" size={18} color={colors.text.onPrimary} />
+                <Text style={[styles.actionBtnText, { color: colors.text.onPrimary }]}>Set Target</Text>
               </TouchableOpacity>
             </View>
           </SafeAreaView>
@@ -668,13 +672,11 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   counterName: {
-    color: COLORS.neutral.white,
     fontSize: 18,
     fontWeight: '600',
     marginRight: 5,
   },
   sessionTimer: {
-    color: COLORS.neutral.white,
     fontSize: 16,
     fontWeight: '500',
   },
@@ -689,11 +691,9 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: '100%',
-    backgroundColor: COLORS.neutral.white,
     borderRadius: 3,
   },
   progressText: {
-    color: COLORS.neutral.white,
     fontSize: 16,
     fontWeight: '500',
     textAlign: 'center',
@@ -705,14 +705,12 @@ const styles = StyleSheet.create({
     marginVertical: 40,
   },
   counterValue: {
-    color: COLORS.neutral.white,
     fontSize: 72,
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 10,
   },
   tapInstruction: {
-    color: COLORS.neutral.white,
     fontSize: 18,
     opacity: 0.8,
   },
@@ -767,7 +765,6 @@ const styles = StyleSheet.create({
   },
   selectedCounterItem: {
     borderWidth: 2,
-    borderColor: COLORS.primary.green,
   },
   counterColor: {
     width: 20,
@@ -795,10 +792,9 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   addCounterButtonText: {
-    color: COLORS.neutral.white,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
-    marginLeft: 10,
+    marginLeft: 8,
   },
   newCounterForm: {
     flex: 1,
@@ -829,7 +825,7 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   selectedColor: {
-    borderColor: COLORS.neutral.white,
+    borderWidth: 3,
   },
   createButton: {
     padding: 15,
@@ -838,7 +834,6 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   createButtonText: {
-    color: COLORS.neutral.white,
     fontSize: 18,
     fontWeight: '600',
   },
@@ -988,13 +983,12 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
   },
   removeBtn: {
-    backgroundColor: COLORS.primary.orange,
+    // backgroundColor set dynamically from theme
   },
   setBtn: {
     // backgroundColor set dynamically
   },
   actionBtnText: {
-    color: COLORS.neutral.white,
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 6,

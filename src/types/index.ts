@@ -21,7 +21,7 @@ export interface Session {
 }
 
 export interface Settings {
-  theme: 'light' | 'dark' | 'auto';
+  theme: 'light' | 'dark' | 'auto' | 'medina' | 'fzhh-blue' | 'white-gold';
   language: 'en' | 'ar';
   hapticFeedback: boolean;
   notifications: boolean;

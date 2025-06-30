@@ -10,11 +10,8 @@ import useGlobalSearch from '../../src/utils/useGlobalSearch';
 import { GlobalActionProvider } from '../../src/contexts/GlobalActionContext';
 
 export default function TabLayout() {
-  const { isDark } = useAppTheme();
+  const { colors } = useAppTheme();
   const { isSearchVisible, showSearch, hideSearch } = useGlobalSearch();
-  
-  // Get accessibility-aware colors
-  const accessibleColors = accessibilityManager.getAccessibleColors(isDark ? 'dark' : 'light');
 
   const SearchButton = () => (
     <TouchableOpacity
@@ -31,7 +28,7 @@ export default function TabLayout() {
         false
       )}
     >
-      <Ionicons name="search" size={20} color={COLORS.neutral.white} />
+      <Ionicons name="search" size={20} color={colors.text.onPrimary} />
     </TouchableOpacity>
   );
 
@@ -44,11 +41,11 @@ export default function TabLayout() {
         />
       <Tabs
       screenOptions={{
-        tabBarActiveTintColor: COLORS.primary.green,
-        tabBarInactiveTintColor: isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray500,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.text.secondary,
         tabBarStyle: {
-          backgroundColor: accessibleColors.surface,
-          borderTopColor: accessibleColors.border,
+          backgroundColor: colors.surface,
+          borderTopColor: colors.border,
           paddingBottom: 5,
           paddingTop: 5,
           height: 60,
@@ -66,9 +63,9 @@ export default function TabLayout() {
           title: 'Counter',
           headerShown: true,
           headerStyle: {
-            backgroundColor: COLORS.primary.green,
+            backgroundColor: colors.primary,
           },
-          headerTintColor: COLORS.neutral.white,
+          headerTintColor: colors.text.onPrimary,
           headerTitleStyle: {
             fontWeight: '600',
           },
@@ -91,9 +88,9 @@ export default function TabLayout() {
           title: 'Prayer Times',
           headerShown: true,
           headerStyle: {
-            backgroundColor: COLORS.primary.teal,
+            backgroundColor: colors.secondary,
           },
-          headerTintColor: COLORS.neutral.white,
+          headerTintColor: colors.text.onSecondary,
           headerTitleStyle: {
             fontWeight: '600',
           },
@@ -116,9 +113,9 @@ export default function TabLayout() {
           title: 'History',
           headerShown: true,
           headerStyle: {
-            backgroundColor: COLORS.primary.pink,
+            backgroundColor: colors.accent,
           },
-          headerTintColor: COLORS.neutral.white,
+          headerTintColor: colors.text.onAccent,
           headerTitleStyle: {
             fontWeight: '600',
           },
@@ -141,9 +138,9 @@ export default function TabLayout() {
           title: 'Settings',
           headerShown: true,
           headerStyle: {
-            backgroundColor: COLORS.primary.purple,
+            backgroundColor: colors.islamic.navy,
           },
-          headerTintColor: COLORS.neutral.white,
+          headerTintColor: colors.text.onPrimary,
           headerTitleStyle: {
             fontWeight: '600',
           },

@@ -37,7 +37,7 @@ export class PrayerTimesErrorBoundary extends React.Component<Props, State> {
 }
 
 function PrayerTimesErrorFallback({ onReset }: { onReset: () => void }) {
-  const { isDark } = useAppTheme();
+  const { colors, isDark } = useAppTheme();
   
   return (
     <View style={[

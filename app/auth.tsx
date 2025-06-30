@@ -45,7 +45,7 @@ const MAX_ATTEMPTS = 5;
 const LOCKOUT_DURATION = 300000; // 5 minutes
 
 export default function AuthScreen() {
-  const { isDark } = useAppTheme();
+  const { colors, isDark } = useAppTheme();
   const { signIn, signUp, signInAsGuest, isLoading, error: contextError, resendConfirmation } = useTasbeeh();
 
   const [isSignUp, setIsSignUp] = useState(false);
@@ -330,7 +330,7 @@ export default function AuthScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: isDark ? COLORS.neutral.gray900 : COLORS.neutral.gray50 }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView 
         style={styles.keyboardAvoid}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -341,7 +341,7 @@ export default function AuthScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <LinearGradient
-            colors={[COLORS.primary.green, COLORS.primary.teal]}
+            colors={[colors.primary, colors.secondary]}
             style={styles.header}
           >
             <View style={styles.headerContent}>
@@ -350,8 +350,8 @@ export default function AuthScreen() {
             </View>
           </LinearGradient>
 
-          <View style={[styles.formContainer, { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.white }]}>
-            <View style={styles.toggleContainer}>
+          <View style={[styles.formContainer, { backgroundColor: colors.card }]}>
+            <View style={[styles.toggleContainer, { backgroundColor: colors.surfaceVariant }]}>
               <TouchableOpacity
                 style={[
                   styles.toggleButton,
@@ -367,7 +367,7 @@ export default function AuthScreen() {
               >
                 <Text style={[
                   styles.toggleText,
-                  { color: !isSignUp ? COLORS.neutral.white : (isDark ? COLORS.neutral.white : COLORS.neutral.gray900) }
+                  { color: !isSignUp ? colors.text.onPrimary : colors.text.primary }
                 ]}>
                   Sign In
                 </Text>
@@ -388,7 +388,7 @@ export default function AuthScreen() {
               >
                 <Text style={[
                   styles.toggleText,
-                  { color: isSignUp ? COLORS.neutral.white : (isDark ? COLORS.neutral.white : COLORS.neutral.gray900) }
+                  { color: isSignUp ? colors.text.onPrimary : colors.text.primary }
                 ]}>
                   Sign Up
                 </Text>
@@ -489,16 +489,16 @@ export default function AuthScreen() {
               styles.inputContainer,
               emailError ? styles.inputError : null,
               { 
-                borderColor: emailError 
-                  ? COLORS.semantic.error 
-                  : (isDark ? COLORS.neutral.gray600 : COLORS.neutral.gray300),
-                backgroundColor: isDark ? COLORS.neutral.gray700 : COLORS.neutral.white
+                            borderColor: emailError 
+              ? colors.error 
+              : colors.border,
+            backgroundColor: colors.surface
               }
             ]}>
               <Ionicons 
                 name="mail-outline" 
                 size={20} 
-                color={emailError ? COLORS.semantic.error : (isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray500)} 
+                color={emailError ? colors.error : colors.text.secondary} 
               />
               <TextInput
                 style={[styles.input, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}
@@ -520,16 +520,16 @@ export default function AuthScreen() {
               styles.inputContainer,
               passwordError ? styles.inputError : null,
               { 
-                borderColor: passwordError 
-                  ? COLORS.semantic.error 
-                  : (isDark ? COLORS.neutral.gray600 : COLORS.neutral.gray300),
-                backgroundColor: isDark ? COLORS.neutral.gray700 : COLORS.neutral.white
+                              borderColor: passwordError 
+                ? colors.error 
+                : colors.border,
+              backgroundColor: colors.surface
               }
             ]}>
               <Ionicons 
                 name="lock-closed-outline" 
                 size={20} 
-                color={passwordError ? COLORS.semantic.error : (isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray500)} 
+                color={passwordError ? colors.error : colors.text.secondary} 
               />
               <TextInput
                 style={[styles.input, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}
@@ -559,8 +559,8 @@ export default function AuthScreen() {
                 <View style={[
                   styles.inputContainer,
                   { 
-                    borderColor: isDark ? COLORS.neutral.gray600 : COLORS.neutral.gray300,
-                    backgroundColor: isDark ? COLORS.neutral.gray700 : COLORS.neutral.white
+                                borderColor: colors.border,
+            backgroundColor: colors.surface
                   }
                 ]}>
                   <Ionicons 
@@ -594,31 +594,31 @@ export default function AuthScreen() {
             <TouchableOpacity
               style={[
                 styles.authButton, 
-                { backgroundColor: COLORS.primary.green },
+                { backgroundColor: colors.primary },
                 (isSubmitting || isLoading) && styles.disabledButton
               ]}
               onPress={handleAuth}
               disabled={isSubmitting || isLoading}
             >
-              <Text style={styles.authButtonText}>
+              <Text style={[styles.authButtonText, { color: colors.text.onPrimary }]}>
                 {isSubmitting || isLoading ? 'Loading...' : (isSignUp ? 'Create Account' : 'Sign In')}
               </Text>
             </TouchableOpacity>
 
             <View style={styles.divider}>
-              <View style={[styles.dividerLine, { backgroundColor: isDark ? COLORS.neutral.gray600 : COLORS.neutral.gray300 }]} />
-              <Text style={[styles.dividerText, { color: isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray500 }]}>
+              <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+              <Text style={[styles.dividerText, { color: colors.text.secondary }]}>
                 OR
               </Text>
-              <View style={[styles.dividerLine, { backgroundColor: isDark ? COLORS.neutral.gray600 : COLORS.neutral.gray300 }]} />
+              <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
             </View>
 
             <TouchableOpacity
               style={[
                 styles.guestButton,
                 { 
-                  backgroundColor: isDark ? COLORS.neutral.gray700 : COLORS.neutral.gray100,
-                  borderColor: isDark ? COLORS.neutral.gray600 : COLORS.neutral.gray300,
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
                 },
                 (isSubmitting || isLoading) && styles.disabledButton
               ]}
@@ -628,14 +628,14 @@ export default function AuthScreen() {
               <Ionicons 
                 name="person-outline" 
                 size={20} 
-                color={isDark ? COLORS.neutral.white : COLORS.neutral.gray900} 
+                color={colors.text.primary} 
               />
-              <Text style={[styles.guestButtonText, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}>
+              <Text style={[styles.guestButtonText, { color: colors.text.primary }]}>
                 Continue as Guest
               </Text>
             </TouchableOpacity>
 
-            <Text style={[styles.disclaimer, { color: isDark ? COLORS.neutral.gray400 : COLORS.neutral.gray500 }]}>
+            <Text style={[styles.disclaimer, { color: colors.text.secondary }]}>
               {isSignUp 
                 ? 'By creating an account, you agree to sync your data to our secure cloud storage.'
                 : 'Sign in to sync your dhikr data across all your devices.'

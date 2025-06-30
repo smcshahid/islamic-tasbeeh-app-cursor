@@ -20,6 +20,8 @@ import storage from '../../src/utils/storage';
 import { COLORS, Counter, ColorKey } from '../../src/types';
 import { SettingsErrorBoundary } from '../../src/components/ErrorBoundary';
 import PrayerSettingsModal from '../../src/components/PrayerSettingsModal';
+import ThemeSelector from '../../src/components/ThemeSelector';
+import ThemeDemoLauncher from '../../src/components/ThemeDemoLauncher';
 import { 
   getButtonA11yProps, 
   getToggleA11yProps,
@@ -29,7 +31,7 @@ import {
 } from '../../src/utils/accessibility';
 
 export default function SettingsScreen() {
-  const { isDark } = useAppTheme();
+  const { colors, themeDefinition, isDark } = useAppTheme();
   const {
     settings,
     counters,
@@ -55,6 +57,7 @@ export default function SettingsScreen() {
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [showPrayerSettings, setShowPrayerSettings] = useState(false);
+  const [showThemeSelector, setShowThemeSelector] = useState(false);
   
   // Accessibility configuration
   const fontScale = getFontScale();
@@ -432,12 +435,27 @@ export default function SettingsScreen() {
           <SettingItem
             icon="color-palette"
             title="Theme"
-            subtitle={settings.theme === 'auto' ? 'System' : settings.theme === 'dark' ? 'Dark' : 'Light'}
+            subtitle={themeDefinition.displayName}
+            onPress={() => setShowThemeSelector(true)}
+          />
+
+          {/* Theme Demo Launcher */}
+          <View style={styles.themeDemoContainer}>
+            <ThemeDemoLauncher 
+              buttonText="🎨 Interactive Theme Preview"
+              size="medium"
+              style={styles.themeDemoButton}
+            />
+          </View>
+
+          {/* Theme Test Screen - for debugging */}
+          <SettingItem
+            icon="bug"
+            title="Theme Test (Debug)"
+            subtitle="Visual validation of all theme colors"
             onPress={() => {
-              const themes = ['auto', 'light', 'dark'];
-              const currentIndex = themes.indexOf(settings.theme);
-              const nextTheme = themes[(currentIndex + 1) % themes.length] as 'auto' | 'light' | 'dark';
-              updateSettings({ theme: nextTheme });
+              // You can navigate to theme test screen here if needed
+              console.log('Theme test pressed - add navigation here');
             }}
           />
 
@@ -778,6 +796,12 @@ export default function SettingsScreen() {
         visible={showPrayerSettings}
         onClose={() => setShowPrayerSettings(false)}
       />
+
+      {/* Theme Selector Modal */}
+      <ThemeSelector
+        visible={showThemeSelector}
+        onClose={() => setShowThemeSelector(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -967,5 +991,14 @@ const styles = StyleSheet.create({
     color: COLORS.neutral.white,
     fontSize: 18,
     fontWeight: '600',
+  },
+  themeDemoContainer: {
+    marginHorizontal: 16,
+    marginVertical: 8,
+  },
+  themeDemoButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    borderStyle: 'dashed',
   },
 }); 
