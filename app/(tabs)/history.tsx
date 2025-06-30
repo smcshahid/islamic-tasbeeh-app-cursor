@@ -539,7 +539,7 @@ export default function HistoryScreen() {
         isUnlocked: thisWeekCounts >= 500,
         progress: Math.min(thisWeekCounts, 500),
         maxProgress: 500,
-        color: COLORS.primary.green,
+                      color: colors.islamic.green,
       },
 
       // LEGENDARY ACHIEVEMENTS (Ultimate Mastery)
@@ -604,7 +604,7 @@ export default function HistoryScreen() {
           <View style={styles.sessionTitleContainer}>
             <View style={[
               styles.counterIndicator,
-              { backgroundColor: counter?.color || COLORS.primary.blue }
+              { backgroundColor: colors.primary }
             ]} />
             <Text style={[
               styles.sessionTitle,
@@ -724,7 +724,7 @@ export default function HistoryScreen() {
           )}
         </View>
         {achievement.isUnlocked && (
-          <Ionicons name="checkmark-circle" size={24} color={achievement.color || COLORS.primary.green} />
+          <Ionicons name="checkmark-circle" size={24} color={achievement.color || colors.primary} />
         )}
       </View>
     );
@@ -1010,8 +1010,8 @@ export default function HistoryScreen() {
                 key={option.key}
                 style={[
                   styles.filterOption,
-                  { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.gray100 },
-                  filter === option.key && { backgroundColor: COLORS.primary.green }
+                                { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.gray100 },
+              filter === option.key && { backgroundColor: colors.primary }
                 ]}
                 onPress={() => setFilter(option.key as FilterType)}
               >
@@ -1041,7 +1041,7 @@ export default function HistoryScreen() {
                     style={[
                       styles.filterOption,
                       { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.gray100 },
-                      selectedCounterId === counter.id && { backgroundColor: counter.color }
+                      selectedCounterId === counter.id && { backgroundColor: colors.primary }
                     ]}
                     onPress={() => setSelectedCounterId(counter.id)}
                   >
@@ -1081,8 +1081,8 @@ export default function HistoryScreen() {
                 key={option.key}
                 style={[
                   styles.filterOption,
-                  { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.gray100 },
-                  sort === option.key && { backgroundColor: COLORS.primary.blue }
+                                { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.gray100 },
+              sort === option.key && { backgroundColor: colors.secondary }
                 ]}
                 onPress={() => setSort(option.key as SortType)}
               >

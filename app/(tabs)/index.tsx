@@ -33,7 +33,7 @@ import {
 } from '../../src/utils/accessibility';
 
 export default function CounterScreen() {
-  const { colors } = useAppTheme();
+  const { colors, themeDefinition } = useAppTheme();
   const { pendingAction, clearPendingAction } = useGlobalAction();
   const {
     currentCounter,
@@ -54,7 +54,7 @@ export default function CounterScreen() {
   const [newCounterName, setNewCounterName] = useState('');
   const [newCounterTarget, setNewCounterTarget] = useState('');
   const [targetValue, setTargetValue] = useState('');
-  const [selectedColor, setSelectedColor] = useState(COLORS.primary.blue);
+  const [selectedColor, setSelectedColor] = useState(colors.primary);
   
   // Accessibility refs and config
   const counterRef = useRef<View>(null);
@@ -167,7 +167,7 @@ export default function CounterScreen() {
     
     setNewCounterName('');
     setNewCounterTarget('');
-    setSelectedColor(COLORS.primary.blue);
+    setSelectedColor(colors.primary);
     setShowNewCounterModal(false);
   };
 
@@ -176,7 +176,7 @@ export default function CounterScreen() {
     return Math.min((currentCounter.count / currentCounter.target) * 100, 100);
   };
 
-  const colorKeys = Object.keys(COLORS.primary) as (keyof typeof COLORS.primary)[];
+
 
   if (isLoading) {
     return (
@@ -202,7 +202,7 @@ export default function CounterScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <CounterErrorBoundary>
         <LinearGradient
-          colors={[currentCounter.color, currentCounter.color + '80']}
+          colors={[colors.primary, colors.primaryLight]}
           style={styles.gradient}
         >
         {/* Header */}
@@ -365,7 +365,7 @@ export default function CounterScreen() {
                   setShowCounterSelector(false);
                 }}
               >
-                <View style={[styles.counterColor, { backgroundColor: counter.color }]} />
+                <View style={[styles.counterColor, { backgroundColor: colors.primary }]} />
                 <View style={styles.counterInfo}>
                   <Text style={[styles.counterItemName, { color: colors.text.primary }]}>
                     {counter.name}
@@ -449,17 +449,54 @@ export default function CounterScreen() {
               Color
             </Text>
             <View style={styles.colorPicker}>
-              {colorKeys.map((colorKey) => (
-                <TouchableOpacity
-                  key={colorKey}
-                  style={[
-                    styles.colorOption,
-                    { backgroundColor: COLORS.primary[colorKey] },
-                    selectedColor === COLORS.primary[colorKey] && styles.selectedColor
-                  ]}
-                  onPress={() => setSelectedColor(COLORS.primary[colorKey])}
-                />
-              ))}
+              <TouchableOpacity
+                style={[
+                  styles.colorOption,
+                  { backgroundColor: colors.primary },
+                  selectedColor === colors.primary && styles.selectedColor
+                ]}
+                onPress={() => setSelectedColor(colors.primary)}
+              />
+              <TouchableOpacity
+                style={[
+                  styles.colorOption,
+                  { backgroundColor: colors.secondary },
+                  selectedColor === colors.secondary && styles.selectedColor
+                ]}
+                onPress={() => setSelectedColor(colors.secondary)}
+              />
+              <TouchableOpacity
+                style={[
+                  styles.colorOption,
+                  { backgroundColor: colors.accent },
+                  selectedColor === colors.accent && styles.selectedColor
+                ]}
+                onPress={() => setSelectedColor(colors.accent)}
+              />
+              <TouchableOpacity
+                style={[
+                  styles.colorOption,
+                  { backgroundColor: colors.islamic.green },
+                  selectedColor === colors.islamic.green && styles.selectedColor
+                ]}
+                onPress={() => setSelectedColor(colors.islamic.green)}
+              />
+              <TouchableOpacity
+                style={[
+                  styles.colorOption,
+                  { backgroundColor: colors.islamic.gold },
+                  selectedColor === colors.islamic.gold && styles.selectedColor
+                ]}
+                onPress={() => setSelectedColor(colors.islamic.gold)}
+              />
+              <TouchableOpacity
+                style={[
+                  styles.colorOption,
+                  { backgroundColor: colors.islamic.navy },
+                  selectedColor === colors.islamic.navy && styles.selectedColor
+                ]}
+                onPress={() => setSelectedColor(colors.islamic.navy)}
+              />
             </View>
 
             <TouchableOpacity
@@ -507,7 +544,7 @@ export default function CounterScreen() {
                 backgroundColor: colors.card,
                 borderColor: colors.border
               }]}>
-                <View style={[styles.counterColorIndicator, { backgroundColor: currentCounter?.color }]} />
+                <View style={[styles.counterColorIndicator, { backgroundColor: colors.primary }]} />
                 <View style={styles.counterInfoText}>
                   <Text style={[styles.counterInfoName, { color: colors.text.primary }]}>
                     {currentCounter?.name}

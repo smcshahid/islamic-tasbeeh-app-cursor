@@ -243,17 +243,17 @@ const themes: Record<ThemeName, ThemeDefinition> = {
   
   'fzhh-blue': {
     name: 'fzhh-blue',
-    displayName: 'FZHH Blue',
-    description: 'Professional charity organization theme',
+    displayName: 'Navy Blue',
+    description: 'Professional navy blue theme',
     isDark: false,
     colors: {
-      primary: '#2563EB',
+      primary: '#1E3A8A',
       primaryLight: '#3B82F6',
-      primaryDark: '#1D4ED8',
+      primaryDark: '#1E40AF',
       
-      secondary: '#0EA5E9',
-      secondaryLight: '#38BDF8',
-      secondaryDark: '#0284C7',
+      secondary: '#1E40AF',
+      secondaryLight: '#3B82F6',
+      secondaryDark: '#1D4ED8',
       
       accent: '#059669',
       accentLight: '#10B981',

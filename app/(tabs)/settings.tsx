@@ -26,7 +26,6 @@ import {
   getButtonA11yProps, 
   getToggleA11yProps,
   announceToScreenReader,
-  getAccessibleColors,
   getFontScale
 } from '../../src/utils/accessibility';
 
@@ -53,7 +52,7 @@ export default function SettingsScreen() {
   const [editingCounter, setEditingCounter] = useState<Counter | null>(null);
   const [editCounterName, setEditCounterName] = useState('');
   const [editCounterTarget, setEditCounterTarget] = useState('');
-  const [editCounterColor, setEditCounterColor] = useState(COLORS.primary.blue);
+  const [editCounterColor, setEditCounterColor] = useState(colors.primary);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [showPrayerSettings, setShowPrayerSettings] = useState(false);
@@ -61,7 +60,6 @@ export default function SettingsScreen() {
   
   // Accessibility configuration
   const fontScale = getFontScale();
-  const accessibleColors = getAccessibleColors(isDark ? 'dark' : 'light');
 
   const handleEditCounter = (counter: Counter) => {
     setEditingCounter(counter);
@@ -86,7 +84,7 @@ export default function SettingsScreen() {
     setEditingCounter(null);
     setEditCounterName('');
     setEditCounterTarget('');
-    setEditCounterColor(COLORS.primary.blue);
+    setEditCounterColor(colors.primary);
   };
 
   const handleDeleteCounter = (counter: Counter) => {
@@ -305,7 +303,7 @@ export default function SettingsScreen() {
     <TouchableOpacity 
       style={[
         styles.settingItem,
-        { backgroundColor: accessibleColors.surface }
+        { backgroundColor: colors.surface }
       ]}
       onPress={onPress}
       disabled={!onPress}
@@ -323,14 +321,14 @@ export default function SettingsScreen() {
         <Ionicons 
           name={icon as any} 
           size={24} 
-          color={accessibleColors.primaryText}
+          color={colors.text.primary}
           accessibilityElementsHidden={true}
         />
         <View style={styles.settingText}>
           <Text style={[
             styles.settingTitle,
             { 
-              color: accessibleColors.primaryText,
+              color: colors.text.primary,
               fontSize: 16 * fontScale
             }
           ]}>
@@ -340,7 +338,7 @@ export default function SettingsScreen() {
             <Text style={[
               styles.settingSubtitle,
               { 
-                color: accessibleColors.secondaryText,
+                color: colors.text.secondary,
                 fontSize: 14 * fontScale
               }
             ]}>
@@ -353,19 +351,19 @@ export default function SettingsScreen() {
         <Ionicons 
           name="chevron-forward" 
           size={20} 
-          color={accessibleColors.secondaryText}
+          color={colors.text.secondary}
           accessibilityElementsHidden={true}
         />
       ))}
     </TouchableOpacity>
   );
 
-  const colorKeys = Object.keys(COLORS.primary) as ColorKey[];
+
 
   return (
     <SafeAreaView style={[
       styles.container,
-      { backgroundColor: isDark ? COLORS.neutral.gray900 : COLORS.neutral.gray50 }
+      { backgroundColor: colors.background }
     ]}>
       <SettingsErrorBoundary>
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -375,7 +373,7 @@ export default function SettingsScreen() {
             style={[
               styles.headerTitle,
               { 
-                color: accessibleColors.primaryText,
+                color: colors.text.primary,
                 fontSize: 28 * fontScale
               }
             ]}
@@ -390,7 +388,7 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={[
             styles.sectionTitle,
-            { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }
+            { color: colors.text.primary }
           ]}>
             Account
           </Text>
@@ -427,7 +425,7 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={[
             styles.sectionTitle,
-            { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }
+            { color: colors.text.primary }
           ]}>
             Preferences
           </Text>
@@ -488,8 +486,8 @@ export default function SettingsScreen() {
                     `Haptic feedback ${value ? 'enabled' : 'disabled'}`
                   );
                 }}
-                trackColor={{ false: COLORS.neutral.gray300, true: COLORS.primary.green }}
-                thumbColor={settings.hapticFeedback ? COLORS.neutral.white : COLORS.neutral.gray500}
+                trackColor={{ false: colors.border, true: colors.primary }}
+                thumbColor={settings.hapticFeedback ? colors.text.onPrimary : colors.text.tertiary}
                 {...getToggleA11yProps(
                   'Haptic Feedback',
                   settings.hapticFeedback,
@@ -512,8 +510,8 @@ export default function SettingsScreen() {
                     `Notifications ${value ? 'enabled' : 'disabled'}`
                   );
                 }}
-                trackColor={{ false: COLORS.neutral.gray300, true: COLORS.primary.green }}
-                thumbColor={settings.notifications ? COLORS.neutral.white : COLORS.neutral.gray500}
+                trackColor={{ false: colors.border, true: colors.primary }}
+                thumbColor={settings.notifications ? colors.text.onPrimary : colors.text.tertiary}
                 {...getToggleA11yProps(
                   'Notifications',
                   settings.notifications,
@@ -556,8 +554,8 @@ export default function SettingsScreen() {
                     `Auto sync ${value ? 'enabled' : 'disabled'}`
                   );
                 }}
-                trackColor={{ false: COLORS.neutral.gray300, true: COLORS.primary.green }}
-                thumbColor={settings.autoSync ? COLORS.neutral.white : COLORS.neutral.gray500}
+                trackColor={{ false: colors.border, true: colors.primary }}
+                thumbColor={settings.autoSync ? colors.text.onPrimary : colors.text.tertiary}
                 {...getToggleA11yProps(
                   'Auto Sync',
                   settings.autoSync,
@@ -586,7 +584,7 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={[
             styles.sectionTitle,
-            { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }
+            { color: colors.text.primary }
           ]}>
             Counters ({counters.length})
           </Text>
@@ -594,7 +592,7 @@ export default function SettingsScreen() {
           {counters.map((counter) => (
             <View key={counter.id} style={[
               styles.counterItem,
-              { backgroundColor: isDark ? COLORS.neutral.gray800 : COLORS.neutral.white }
+              { backgroundColor: colors.surface }
             ]}>
               <View style={styles.counterLeft}>
                 <View style={[
@@ -604,13 +602,13 @@ export default function SettingsScreen() {
                 <View style={styles.counterInfo}>
                   <Text style={[
                     styles.counterName,
-                    { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }
+                    { color: colors.text.primary }
                   ]}>
                     {counter.name}
                   </Text>
                   <Text style={[
                     styles.counterStats,
-                    { color: isDark ? COLORS.neutral.gray300 : COLORS.neutral.gray600 }
+                    { color: colors.text.secondary }
                   ]}>
                     Count: {counter.count.toLocaleString()}
                     {counter.target && ` • Target: ${counter.target.toLocaleString()}`}
@@ -620,18 +618,18 @@ export default function SettingsScreen() {
               
               <View style={styles.counterActions}>
                 <TouchableOpacity
-                  style={[styles.counterActionButton, { backgroundColor: COLORS.primary.blue }]}
+                  style={[styles.counterActionButton, { backgroundColor: colors.secondary }]}
                   onPress={() => handleEditCounter(counter)}
                 >
-                  <Ionicons name="pencil" size={16} color={COLORS.neutral.white} />
+                  <Ionicons name="pencil" size={16} color={colors.text.onSecondary} />
                 </TouchableOpacity>
                 
                 {counters.length > 1 && (
                   <TouchableOpacity
-                    style={[styles.counterActionButton, { backgroundColor: COLORS.primary.orange }]}
+                    style={[styles.counterActionButton, { backgroundColor: colors.error }]}
                     onPress={() => handleDeleteCounter(counter)}
                   >
-                    <Ionicons name="trash" size={16} color={COLORS.neutral.white} />
+                    <Ionicons name="trash" size={16} color={colors.text.onPrimary} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -643,7 +641,7 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={[
             styles.sectionTitle,
-            { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }
+            { color: colors.text.primary }
           ]}>
             About
           </Text>
@@ -678,7 +676,7 @@ export default function SettingsScreen() {
         {/* Loading indicator */}
         {isLoading && (
           <View style={styles.loadingOverlay}>
-            <Text style={[styles.loadingText, { color: isDark ? COLORS.neutral.white : COLORS.neutral.gray900 }]}>
+            <Text style={[styles.loadingText, { color: colors.text.primary }]}>
               Loading...
             </Text>
           </View>
@@ -686,8 +684,8 @@ export default function SettingsScreen() {
 
         {/* Error message */}
         {error && (
-          <View style={[styles.errorContainer, { backgroundColor: COLORS.primary.orange }]}>
-            <Text style={styles.errorText}>{error}</Text>
+          <View style={[styles.errorContainer, { backgroundColor: colors.error }]}>
+            <Text style={[styles.errorText, { color: colors.text.onPrimary }]}>{error}</Text>
           </View>
         )}
       </ScrollView>
@@ -768,17 +766,54 @@ export default function SettingsScreen() {
               Color
             </Text>
             <View style={styles.colorPicker}>
-              {colorKeys.map((colorKey) => (
-                <TouchableOpacity
-                  key={colorKey}
-                  style={[
-                    styles.colorOption,
-                    { backgroundColor: COLORS.primary[colorKey] },
-                    editCounterColor === COLORS.primary[colorKey] && styles.selectedColor
-                  ]}
-                  onPress={() => setEditCounterColor(COLORS.primary[colorKey])}
-                />
-              ))}
+              <TouchableOpacity
+                style={[
+                  styles.colorOption,
+                  { backgroundColor: colors.primary },
+                  editCounterColor === colors.primary && styles.selectedColor
+                ]}
+                onPress={() => setEditCounterColor(colors.primary)}
+              />
+              <TouchableOpacity
+                style={[
+                  styles.colorOption,
+                  { backgroundColor: colors.secondary },
+                  editCounterColor === colors.secondary && styles.selectedColor
+                ]}
+                onPress={() => setEditCounterColor(colors.secondary)}
+              />
+              <TouchableOpacity
+                style={[
+                  styles.colorOption,
+                  { backgroundColor: colors.accent },
+                  editCounterColor === colors.accent && styles.selectedColor
+                ]}
+                onPress={() => setEditCounterColor(colors.accent)}
+              />
+              <TouchableOpacity
+                style={[
+                  styles.colorOption,
+                  { backgroundColor: colors.islamic.green },
+                  editCounterColor === colors.islamic.green && styles.selectedColor
+                ]}
+                onPress={() => setEditCounterColor(colors.islamic.green)}
+              />
+              <TouchableOpacity
+                style={[
+                  styles.colorOption,
+                  { backgroundColor: colors.islamic.gold },
+                  editCounterColor === colors.islamic.gold && styles.selectedColor
+                ]}
+                onPress={() => setEditCounterColor(colors.islamic.gold)}
+              />
+              <TouchableOpacity
+                style={[
+                  styles.colorOption,
+                  { backgroundColor: colors.islamic.navy },
+                  editCounterColor === colors.islamic.navy && styles.selectedColor
+                ]}
+                onPress={() => setEditCounterColor(colors.islamic.navy)}
+              />
             </View>
 
             <TouchableOpacity
@@ -932,7 +967,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   errorText: {
-    color: COLORS.neutral.white,
     fontSize: 14,
     fontWeight: '500',
   },
@@ -979,7 +1013,7 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   selectedColor: {
-    borderColor: COLORS.neutral.white,
+    borderColor: '#FFFFFF',
   },
   saveButton: {
     padding: 15,
@@ -988,7 +1022,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   saveButtonText: {
-    color: COLORS.neutral.white,
+    color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '600',
   },
