@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
+  FlatList,
   ScrollView,
   TouchableOpacity,
   StyleSheet,
@@ -10,6 +11,7 @@ import {
   Modal,
   Dimensions,
   Platform,
+  ViewToken,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +22,8 @@ import { accessibilityManager, getButtonA11yProps } from '../utils/accessibility
 import { hapticFeedback } from '../utils/haptics';
 import { secureLogger } from '../utils/secureLogger';
 import { quranApi, getSurahName } from '../utils/quranApi';
+import QuranAudioPlayer from './QuranAudioPlayer';
+import { playQuranVerse } from '../utils/unifiedAudioService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -45,6 +49,8 @@ interface VerseComponentProps {
   onBookmarkToggle: (verse: QuranVerse) => void;
   onPlayAudio: (verse: QuranVerse) => void;
   onWordPress?: (word: string, index: number) => void;
+  isVisible: boolean;
+  onVisibilityChange: (verse: QuranVerse, isVisible: boolean) => void;
 }
 
 const VerseComponent: React.FC<VerseComponentProps> = ({
@@ -61,12 +67,50 @@ const VerseComponent: React.FC<VerseComponentProps> = ({
   onBookmarkToggle,
   onPlayAudio,
   onWordPress,
+  isVisible,
+  onVisibilityChange,
 }) => {
   const { colors } = useAppTheme();
+  const { markAsRead } = useQuranContext();
+  const [hasBeenRead, setHasBeenRead] = useState(false);
+  const visibilityTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Handle visibility changes and reading timer
+  useEffect(() => {
+    if (isVisible && !hasBeenRead) {
+      // Clear any existing timer
+      if (visibilityTimerRef.current) {
+        clearTimeout(visibilityTimerRef.current);
+      }
+      
+      // Start new timer
+      visibilityTimerRef.current = setTimeout(() => {
+        setHasBeenRead(true);
+        markAsRead(surahNumber, verse.verseNumber);
+        secureLogger.info('Verse marked as read after being visible', { 
+          surah: surahNumber, 
+          verse: verse.verseNumber 
+        });
+      }, 3000); // 3 seconds of visibility required
+      
+    } else if (!isVisible && visibilityTimerRef.current) {
+      // Clear timer if verse becomes invisible
+      clearTimeout(visibilityTimerRef.current);
+      visibilityTimerRef.current = null;
+    }
+  }, [isVisible, hasBeenRead, surahNumber, verse.verseNumber]); // Removed markAsRead and visibilityTimer from deps
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (visibilityTimerRef.current) {
+        clearTimeout(visibilityTimerRef.current);
+      }
+    };
+  }, []);
   
   const renderArabicText = () => {
     if (showWordByWord && onWordPress) {
-      // Split Arabic text into words for word-by-word analysis
       const words = verse.text.split(' ');
       return (
         <View style={styles.wordByWordContainer}>
@@ -116,6 +160,9 @@ const VerseComponent: React.FC<VerseComponentProps> = ({
           borderColor: colors.border,
           marginBottom: readingMode === 'focus' ? 24 : 16,
           padding: readingMode === 'focus' ? 24 : 16,
+          opacity: hasBeenRead ? 1 : 0.95,
+          borderWidth: isVisible ? 2 : 1,
+          borderColor: isVisible ? colors.primary + '40' : colors.border,
         }
       ]}
       onPress={() => onVersePress(verse)}
@@ -125,12 +172,30 @@ const VerseComponent: React.FC<VerseComponentProps> = ({
         false
       )}
     >
-      {/* Verse Header */}
       <View style={styles.verseHeader}>
-        <View style={[styles.verseNumber, { backgroundColor: colors.primary + '20' }]}>
+        <View style={[
+          styles.verseNumber, 
+          { 
+            backgroundColor: hasBeenRead 
+              ? colors.primary + '30' 
+              : isVisible
+              ? colors.primary + '25'
+              : colors.primary + '20' 
+          }
+        ]}>
           <Text style={[styles.verseNumberText, { color: colors.primary }]}>
             {verse.verseNumber}
           </Text>
+          {hasBeenRead && (
+            <View style={styles.readIndicator}>
+              <Ionicons name="checkmark-circle" size={12} color={colors.primary} />
+            </View>
+          )}
+          {isVisible && !hasBeenRead && (
+            <View style={styles.viewingIndicator}>
+              <Ionicons name="eye" size={10} color={colors.secondary} />
+            </View>
+          )}
         </View>
         
         <View style={styles.verseActions}>
@@ -160,12 +225,10 @@ const VerseComponent: React.FC<VerseComponentProps> = ({
         </View>
       </View>
 
-      {/* Arabic Text */}
       <View style={styles.arabicContainer}>
         {renderArabicText()}
       </View>
 
-      {/* Transliteration */}
       {showTransliteration && verse.transliteration && (
         <Text style={[
           styles.transliteration,
@@ -179,7 +242,6 @@ const VerseComponent: React.FC<VerseComponentProps> = ({
         </Text>
       )}
 
-      {/* Translation */}
       {showTranslation && (
         <Text style={[
           styles.translation,
@@ -193,7 +255,6 @@ const VerseComponent: React.FC<VerseComponentProps> = ({
         </Text>
       )}
 
-      {/* Sajda indicator */}
       {verse.sajda && (
         <View style={[styles.sajdaIndicator, { backgroundColor: colors.islamic.green + '20' }]}>
           <Ionicons name="arrow-down" size={16} color={colors.islamic.green} />
@@ -220,7 +281,6 @@ const QuranReader: React.FC<QuranReaderProps> = ({
     navigateToSurah,
     addBookmark,
     removeBookmark,
-    playAudio,
     markAsRead,
     updateQuranSettings,
     getWordAnalysis,
@@ -234,66 +294,70 @@ const QuranReader: React.FC<QuranReaderProps> = ({
   const [selectedVerse, setSelectedVerse] = useState<QuranVerse | null>(null);
   const [tafsirText, setTafsirText] = useState('');
   const [wordAnalysis, setWordAnalysis] = useState<any>(null);
+  const [visibleVerses, setVisibleVerses] = useState<Set<number>>(new Set());
   
-  const scrollViewRef = useRef<ScrollView>(null);
+  // Audio player state
+  const [showAudioPlayer, setShowAudioPlayer] = useState(false);
+  const [audioPlayerSurah, setAudioPlayerSurah] = useState<number>(1);
+  const [audioPlayerVerse, setAudioPlayerVerse] = useState<number>(1);
+  
+  const flatListRef = useRef<FlatList>(null);
 
-  // Mode-specific settings
   const getModeSettings = useCallback(() => {
     switch (mode) {
       case 'reciter':
         return {
-          showTranslation: false,
-          showTransliteration: false,
+          showTranslation: true,
+          showTransliteration: true,
           showWordByWord: false,
+          arabicFontSize: settings.arabicFontSize + 2,
           readingMode: 'focus',
-          arabicFontSize: Math.max(settings.arabicFontSize, 20),
         };
       case 'seeker':
         return {
           showTranslation: true,
           showTransliteration: true,
           showWordByWord: true,
-          readingMode: 'normal',
           arabicFontSize: settings.arabicFontSize,
+          readingMode: 'normal',
         };
       case 'memorizer':
         return {
-          showTranslation: settings.hideTranslation ? false : true,
+          showTranslation: false,
           showTransliteration: false,
           showWordByWord: false,
-          readingMode: 'memorization',
-          arabicFontSize: settings.arabicFontSize,
+          arabicFontSize: settings.arabicFontSize + 4,
+          readingMode: 'focus',
         };
       case 'auditory':
         return {
           showTranslation: true,
           showTransliteration: false,
           showWordByWord: false,
-          readingMode: 'normal',
-          arabicFontSize: settings.arabicFontSize,
+          arabicFontSize: settings.arabicFontSize + 2,
+          readingMode: 'focus',
         };
       case 'beginner':
         return {
           showTranslation: true,
           showTransliteration: true,
-          showWordByWord: true,
+          showWordByWord: false,
+          arabicFontSize: settings.arabicFontSize,
           readingMode: 'normal',
-          arabicFontSize: Math.min(settings.arabicFontSize, 18),
         };
       default:
         return {
-          showTranslation: settings.showTranslation !== false, // Always show translation by default
+          showTranslation: settings.showTranslation !== false,
           showTransliteration: settings.showTransliteration,
           showWordByWord: settings.showWordByWord,
-          readingMode: 'normal',
           arabicFontSize: settings.arabicFontSize,
+          readingMode: 'normal',
         };
     }
   }, [mode, settings]);
 
   const modeSettings = getModeSettings();
 
-  // Load surah data
   useEffect(() => {
     if (visible) {
       loadSurah(initialSurah);
@@ -316,7 +380,7 @@ const QuranReader: React.FC<QuranReaderProps> = ({
       if (initialVerse > 1) {
         setTimeout(() => {
           scrollToVerse(initialVerse);
-        }, 500);
+        }, 1000);
       }
     } catch (error) {
       secureLogger.error('Error loading surah for reading', error);
@@ -327,10 +391,66 @@ const QuranReader: React.FC<QuranReaderProps> = ({
   };
 
   const scrollToVerse = (verseNumber: number) => {
-    // This would need to be implemented with proper verse positioning
-    // For now, just log the action
-    secureLogger.info('Scrolling to verse', { verseNumber });
+    try {
+      if (!flatListRef.current || !surah) {
+        secureLogger.warn('FlatList ref or surah not available for verse scrolling');
+        return;
+      }
+
+      const verseIndex = surah.verses.findIndex(v => v.verseNumber === verseNumber);
+      if (verseIndex >= 0) {
+        flatListRef.current.scrollToIndex({ 
+          index: verseIndex, 
+          animated: true,
+          viewPosition: 0.3 // Show verse at 30% from top for better visibility
+        });
+
+        secureLogger.info('Scrolled to verse successfully', { 
+          verseNumber, 
+          verseIndex 
+        });
+      } else {
+        secureLogger.warn('Verse not found for scrolling', { verseNumber });
+      }
+    } catch (error) {
+      secureLogger.error('Error scrolling to verse', { 
+        error: error.message || String(error),
+        verseNumber 
+      });
+    }
   };
+
+  // Handle viewport changes to track which verses are visible
+  const onViewableItemsChanged = useCallback((info: { viewableItems: ViewToken[] }) => {
+    const newVisibleVerses = new Set<number>();
+    
+    info.viewableItems.forEach(item => {
+      if (item.isViewable && item.item) {
+        newVisibleVerses.add(item.item.verseNumber);
+      }
+    });
+    
+    setVisibleVerses(newVisibleVerses);
+    
+    secureLogger.info('Viewable verses changed', { 
+      visibleVerses: Array.from(newVisibleVerses),
+      count: newVisibleVerses.size 
+    });
+  }, []);
+
+  const viewabilityConfig = {
+    itemVisiblePercentThreshold: 50, // Consider item visible when 50% is shown
+    minimumViewTime: 500, // Item must be visible for at least 500ms
+  };
+
+  const getItemLayout = useCallback((data: any, index: number) => {
+    const ESTIMATED_ITEM_HEIGHT = 150; // Estimated height per verse
+    return {
+      length: ESTIMATED_ITEM_HEIGHT,
+      offset: ESTIMATED_ITEM_HEIGHT * index,
+      index,
+    };
+  }, []);
 
   const handleVersePress = async (verse: QuranVerse) => {
     try {
@@ -341,21 +461,17 @@ const QuranReader: React.FC<QuranReaderProps> = ({
 
       hapticFeedback.light();
       
-      // Mark as read
       await markAsRead(surah.id, verse.verseNumber);
       
-      // Set selected verse for additional actions
       setSelectedVerse(verse);
       
-      secureLogger.info('Verse pressed successfully', { 
+      secureLogger.info('Verse pressed and marked as read', { 
         surah: surah.id, 
         verse: verse.verseNumber, 
         mode 
       });
       
-      // Mode-specific actions
       if (mode === 'seeker') {
-        // Load tafsir for knowledge seekers
         try {
           const tafsir = await getTafsir(surah.id, verse.verseNumber);
           setTafsirText(tafsir || 'No tafsir available for this verse.');
@@ -366,9 +482,10 @@ const QuranReader: React.FC<QuranReaderProps> = ({
           setShowTafsir(true);
         }
       } else if (mode === 'auditory') {
-        // Auto-play audio for auditory learners
         try {
-          await playAudio(surah.id, verse.verseNumber);
+          // Use unified audio service for auditory mode
+          await playQuranVerse(surah.id, verse.verseNumber);
+          secureLogger.info('Audio playback started for auditory mode', { surah: surah.id, verse: verse.verseNumber });
         } catch (audioError) {
           secureLogger.warn('Audio playback failed in auditory mode', audioError);
         }
@@ -400,7 +517,6 @@ const QuranReader: React.FC<QuranReaderProps> = ({
       }
     } catch (error) {
       secureLogger.error('Error toggling bookmark', error);
-      // Don't show alert, just log the error
       secureLogger.info('Bookmark operation failed, continuing without interruption');
     }
   };
@@ -413,11 +529,12 @@ const QuranReader: React.FC<QuranReaderProps> = ({
       }
 
       hapticFeedback.light();
-      await playAudio(surah.id, verse.verseNumber);
+      setShowAudioPlayer(true);
+      setAudioPlayerSurah(surah.id);
+      setAudioPlayerVerse(verse.verseNumber);
       secureLogger.info('Audio playback initiated', { surah: surah.id, verse: verse.verseNumber });
     } catch (error) {
       secureLogger.error('Error playing audio', error);
-      // Don't show alert, just log the error
       secureLogger.info('Audio playback failed, continuing without interruption');
     }
   };
@@ -439,6 +556,32 @@ const QuranReader: React.FC<QuranReaderProps> = ({
     if (!verse || !surah) return false;
     return bookmarks.some(
       b => b.surahNumber === surah.id && b.verseNumber === verse.verseNumber
+    );
+  };
+
+  const renderVerse = ({ item: verse, index }: { item: QuranVerse; index: number }) => {
+    const isVisible = visibleVerses.has(verse.verseNumber);
+    
+    return (
+      <VerseComponent
+        verse={verse}
+        surahNumber={surah?.id || 0}
+        isBookmarked={isVerseBookmarked(verse)}
+        showTranslation={modeSettings.showTranslation}
+        showTransliteration={modeSettings.showTransliteration}
+        showWordByWord={modeSettings.showWordByWord}
+        arabicFontSize={modeSettings.arabicFontSize}
+        translationFontSize={settings.translationFontSize}
+        readingMode={modeSettings.readingMode}
+        onVersePress={handleVersePress}
+        onBookmarkToggle={handleBookmarkToggle}
+        onPlayAudio={handlePlayAudio}
+        onWordPress={modeSettings.showWordByWord ? handleWordPress : undefined}
+        isVisible={isVisible}
+        onVisibilityChange={(verse, isVisible) => {
+          // This callback can be used for additional visibility handling if needed
+        }}
+      />
     );
   };
 
@@ -490,6 +633,24 @@ const QuranReader: React.FC<QuranReaderProps> = ({
     );
   };
 
+  const renderBismillah = () => {
+    if (!surah?.bismillahPre) return null;
+    
+    return (
+      <View style={[styles.bismillahContainer, { backgroundColor: colors.surface }]}>
+        <Text style={[styles.bismillah, { 
+          fontSize: modeSettings.arabicFontSize + 2,
+          color: colors.text.primary 
+        }]}>
+          بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ
+        </Text>
+        <Text style={[styles.bismillahTranslation, { color: colors.text.secondary }]}>
+          In the name of Allah, the Most Gracious, the Most Merciful
+        </Text>
+      </View>
+    );
+  };
+
   if (!visible) return null;
 
   return (
@@ -511,47 +672,31 @@ const QuranReader: React.FC<QuranReaderProps> = ({
             </Text>
           </View>
         ) : surah ? (
-          <ScrollView
-            ref={scrollViewRef}
-            style={styles.scrollView}
-            contentContainerStyle={styles.scrollContent}
+          <FlatList
+            ref={flatListRef}
+            data={surah.verses}
+            renderItem={renderVerse}
+            keyExtractor={(item) => item.id.toString()}
+            ListHeaderComponent={renderBismillah}
+            onViewableItemsChanged={onViewableItemsChanged}
+            viewabilityConfig={viewabilityConfig}
+            getItemLayout={getItemLayout}
+            removeClippedSubviews={true} // Enable lazy loading
+            maxToRenderPerBatch={10} // Render 10 items per batch
+            updateCellsBatchingPeriod={50} // Update every 50ms
+            initialNumToRender={5} // Initially render 5 items
+            windowSize={10} // Keep 10 screens worth of items in memory
+            contentContainerStyle={styles.flatListContent}
             showsVerticalScrollIndicator={false}
-          >
-            {/* Bismillah */}
-            {surah.bismillahPre && (
-              <View style={[styles.bismillahContainer, { backgroundColor: colors.surface }]}>
-                <Text style={[styles.bismillah, { 
-                  fontSize: modeSettings.arabicFontSize + 2,
-                  color: colors.text.primary 
-                }]}>
-                  بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ
-                </Text>
-                <Text style={[styles.bismillahTranslation, { color: colors.text.secondary }]}>
-                  In the name of Allah, the Most Gracious, the Most Merciful
-                </Text>
-              </View>
-            )}
-
-            {/* Verses */}
-            {surah.verses.map((verse) => (
-              <VerseComponent
-                key={verse.id}
-                verse={verse}
-                surahNumber={surah.id}
-                isBookmarked={isVerseBookmarked(verse)}
-                showTranslation={modeSettings.showTranslation}
-                showTransliteration={modeSettings.showTransliteration}
-                showWordByWord={modeSettings.showWordByWord}
-                arabicFontSize={modeSettings.arabicFontSize}
-                translationFontSize={settings.translationFontSize}
-                readingMode={modeSettings.readingMode}
-                onVersePress={handleVersePress}
-                onBookmarkToggle={handleBookmarkToggle}
-                onPlayAudio={handlePlayAudio}
-                onWordPress={modeSettings.showWordByWord ? handleWordPress : undefined}
-              />
-            ))}
-          </ScrollView>
+            onScrollToIndexFailed={(info) => {
+              secureLogger.warn('Scroll to index failed', info);
+              // Fallback: try to scroll to offset
+              if (flatListRef.current) {
+                const offset = info.index * 150; // Estimated item height
+                flatListRef.current.scrollToOffset({ offset, animated: true });
+              }
+            }}
+          />
         ) : (
           <View style={styles.errorContainer}>
             <Text style={[styles.errorText, { color: colors.text.secondary }]}>
@@ -560,7 +705,6 @@ const QuranReader: React.FC<QuranReaderProps> = ({
           </View>
         )}
 
-        {/* Tafsir Modal */}
         <Modal
           visible={showTafsir}
           animationType="slide"
@@ -583,6 +727,15 @@ const QuranReader: React.FC<QuranReaderProps> = ({
             </ScrollView>
           </SafeAreaView>
         </Modal>
+
+        {/* Audio Player Modal */}
+        <QuranAudioPlayer
+          visible={showAudioPlayer}
+          onClose={() => setShowAudioPlayer(false)}
+          surahNumber={audioPlayerSurah}
+          verseNumber={audioPlayerVerse}
+          autoPlay={true}
+        />
       </SafeAreaView>
     </Modal>
   );
@@ -643,10 +796,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
   },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
+  flatListContent: {
     padding: 16,
   },
   bismillahContainer: {
@@ -681,6 +831,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
+    position: 'relative',
   },
   verseNumberText: {
     fontSize: 14,
@@ -755,6 +906,22 @@ const styles = StyleSheet.create({
   tafsirText: {
     fontSize: 16,
     lineHeight: 24,
+  },
+  readIndicator: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 8,
+    padding: 1,
+  },
+  viewingIndicator: {
+    position: 'absolute',
+    top: -2,
+    left: -2,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 8,
+    padding: 1,
   },
 });
 

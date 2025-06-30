@@ -79,7 +79,7 @@ export default function TabLayout() {
               accessibilityLabel={`Counter tab${focused ? ', selected' : ''}`}
             />
           ),
-          ...accessibilityManager.getTabAccessibilityProps('Counter', false, 0, 5)
+          ...accessibilityManager.getTabAccessibilityProps('Counter', false, 0, 6)
         }}
       />
       <Tabs.Screen
@@ -104,7 +104,7 @@ export default function TabLayout() {
               accessibilityLabel={`Prayer Times tab${focused ? ', selected' : ''}`}
             />
           ),
-          ...accessibilityManager.getTabAccessibilityProps('Prayer Times', false, 1, 5)
+          ...accessibilityManager.getTabAccessibilityProps('Prayer Times', false, 1, 6)
         }}
       />
       <Tabs.Screen
@@ -129,7 +129,32 @@ export default function TabLayout() {
               accessibilityLabel={`Quran tab${focused ? ', selected' : ''}`}
             />
           ),
-          ...accessibilityManager.getTabAccessibilityProps('Quran', false, 2, 5)
+          ...accessibilityManager.getTabAccessibilityProps('Quran', false, 2, 6)
+        }}
+      />
+      <Tabs.Screen
+        name="audio"
+        options={{
+          title: 'Audio',
+          headerShown: true,
+          headerStyle: {
+            backgroundColor: '#1a1a2e',
+          },
+          headerTintColor: colors.text.onPrimary,
+          headerTitleStyle: {
+            fontWeight: '600',
+          },
+          headerRight: SearchButton,
+          tabBarAccessibilityLabel: 'Audio tab',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? 'musical-notes' : 'musical-notes-outline'}
+              size={24}
+              color={color}
+              accessibilityLabel={`Audio tab${focused ? ', selected' : ''}`}
+            />
+          ),
+          ...accessibilityManager.getTabAccessibilityProps('Audio', false, 3, 6)
         }}
       />
       <Tabs.Screen
@@ -154,7 +179,7 @@ export default function TabLayout() {
               accessibilityLabel={`History tab${focused ? ', selected' : ''}`}
             />
           ),
-          ...accessibilityManager.getTabAccessibilityProps('History', false, 3, 5)
+          ...accessibilityManager.getTabAccessibilityProps('History', false, 4, 6)
         }}
       />
       <Tabs.Screen
@@ -179,7 +204,7 @@ export default function TabLayout() {
               accessibilityLabel={`Settings tab${focused ? ', selected' : ''}`}
             />
           ),
-          ...accessibilityManager.getTabAccessibilityProps('Settings', false, 4, 5)
+          ...accessibilityManager.getTabAccessibilityProps('Settings', false, 5, 6)
         }}
       />
     </Tabs>

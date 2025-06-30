@@ -19,6 +19,8 @@ import { accessibilityManager, getButtonA11yProps } from '../utils/accessibility
 import { hapticFeedback } from '../utils/haptics';
 import { secureLogger } from '../utils/secureLogger';
 import { SURAH_METADATA, getSurahName } from '../utils/quranApi';
+import { getArabicTextStyle } from '../utils/helpers';
+import { TYPOGRAPHY_PRESETS } from '../utils/fonts';
 
 interface SurahListProps {
   visible: boolean;
@@ -610,8 +612,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '600',
+    ...TYPOGRAPHY_PRESETS.appTitle(24),
   },
   searchContainer: {
     flexDirection: 'row',
@@ -624,7 +625,7 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     marginLeft: 8,
-    fontSize: 16,
+    ...TYPOGRAPHY_PRESETS.bodyText(16),
   },
   controls: {
     flexDirection: 'row',
@@ -643,7 +644,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   filterButtonText: {
-    fontSize: 14,
+    ...TYPOGRAPHY_PRESETS.caption(14),
     fontWeight: '500',
   },
   viewControls: {
@@ -659,11 +660,11 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   controlButtonText: {
-    fontSize: 12,
+    ...TYPOGRAPHY_PRESETS.caption(12),
     marginLeft: 4,
   },
   resultsCount: {
-    fontSize: 14,
+    ...TYPOGRAPHY_PRESETS.caption(14),
     textAlign: 'center',
   },
   loadingContainer: {
@@ -673,7 +674,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: 8,
-    fontSize: 16,
+    ...TYPOGRAPHY_PRESETS.bodyText(16),
   },
   listContent: {
     padding: 16,
@@ -697,8 +698,7 @@ const styles = StyleSheet.create({
     marginRight: 16,
   },
   surahNumberText: {
-    fontSize: 16,
-    fontWeight: '600',
+    ...TYPOGRAPHY_PRESETS.bodyBold(16),
   },
   surahInfo: {
     flex: 1,
@@ -710,19 +710,16 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   surahEnglishName: {
-    fontSize: 16,
-    fontWeight: '600',
+    ...TYPOGRAPHY_PRESETS.sectionTitle(16),
   },
   surahArabicName: {
-    fontSize: 16,
-    fontWeight: '500',
-    textAlign: 'right',
+    ...TYPOGRAPHY_PRESETS.surahNameArabic(16),
   },
   surahMeta: {
     marginBottom: 4,
   },
   surahMeaning: {
-    fontSize: 14,
+    ...TYPOGRAPHY_PRESETS.caption(14),
     fontStyle: 'italic',
     marginBottom: 2,
   },
@@ -731,7 +728,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   surahStat: {
-    fontSize: 12,
+    ...TYPOGRAPHY_PRESETS.caption(12),
     marginRight: 8,
   },
   
@@ -753,22 +750,20 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   surahNumberTextGrid: {
-    fontSize: 14,
-    fontWeight: '600',
+    ...TYPOGRAPHY_PRESETS.bodyBold(14),
   },
   surahEnglishNameGrid: {
-    fontSize: 14,
-    fontWeight: '600',
+    ...TYPOGRAPHY_PRESETS.bodyBold(14),
     textAlign: 'center',
     marginBottom: 4,
   },
   surahArabicNameGrid: {
-    fontSize: 14,
+    ...TYPOGRAPHY_PRESETS.surahNameArabic(14),
     textAlign: 'center',
     marginBottom: 4,
   },
   surahVersesGrid: {
-    fontSize: 12,
+    ...TYPOGRAPHY_PRESETS.caption(12),
     textAlign: 'center',
   },
   progressBarGrid: {
@@ -799,8 +794,7 @@ const styles = StyleSheet.create({
     marginLeft: 16,
   },
   surahArabicNameLarge: {
-    fontSize: 18,
-    fontWeight: '500',
+    ...TYPOGRAPHY_PRESETS.surahNameArabic(20),
   },
   revelationBadge: {
     paddingHorizontal: 8,
@@ -808,12 +802,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   revelationText: {
-    fontSize: 12,
+    ...TYPOGRAPHY_PRESETS.caption(12),
     fontWeight: '600',
     textTransform: 'capitalize',
   },
   surahMeaningDetailed: {
-    fontSize: 16,
+    ...TYPOGRAPHY_PRESETS.bodyText(16),
     fontStyle: 'italic',
     marginBottom: 12,
     textAlign: 'center',
@@ -828,7 +822,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   detailText: {
-    fontSize: 12,
+    ...TYPOGRAPHY_PRESETS.caption(12),
     marginLeft: 4,
   },
   
@@ -848,7 +842,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   progressLabel: {
-    fontSize: 12,
+    ...TYPOGRAPHY_PRESETS.caption(12),
     marginBottom: 4,
   },
   progressBar: {
@@ -862,7 +856,7 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   progressText: {
-    fontSize: 10,
+    ...TYPOGRAPHY_PRESETS.caption(10),
     minWidth: 30,
   },
   progressWithText: {
@@ -870,7 +864,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   progressPercent: {
-    fontSize: 12,
+    ...TYPOGRAPHY_PRESETS.caption(12),
     marginLeft: 8,
     minWidth: 30,
   },

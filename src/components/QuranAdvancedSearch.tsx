@@ -10,6 +10,8 @@ import {
   Modal,
   ActivityIndicator,
   Alert,
+  I18nManager,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,6 +21,7 @@ import { QuranSearchResult } from '../types';
 import { hapticFeedback } from '../utils/haptics';
 import { secureLogger } from '../utils/secureLogger';
 import { quranApi, getSurahName } from '../utils/quranApi';
+import { TYPOGRAPHY_PRESETS } from '../utils/fonts';
 
 interface QuranAdvancedSearchProps {
   visible: boolean;
@@ -230,8 +233,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#E5E7EB',
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
+    ...TYPOGRAPHY_PRESETS.sectionTitle(18),
   },
   placeholder: {
     width: 24,
@@ -248,6 +250,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     marginLeft: 8,
+    ...TYPOGRAPHY_PRESETS.bodyText(16),
   },
   searchButton: {
     marginHorizontal: 16,
@@ -257,8 +260,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   searchButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
+    ...TYPOGRAPHY_PRESETS.bodyBold(16),
   },
   resultsList: {
     padding: 16,
@@ -270,19 +272,17 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   resultLocation: {
-    fontSize: 14,
+    ...TYPOGRAPHY_PRESETS.caption(14),
     fontWeight: '600',
     marginBottom: 8,
   },
   resultArabic: {
-    fontSize: 16,
-    textAlign: 'right',
-    marginBottom: 8,
-    lineHeight: 28,
+    ...TYPOGRAPHY_PRESETS.searchResultArabic(22),
+    marginBottom: 12,
   },
   resultTranslation: {
-    fontSize: 14,
-    lineHeight: 20,
+    ...TYPOGRAPHY_PRESETS.searchResultTranslation(15),
+    textAlign: 'left',
   },
 });
 

@@ -644,6 +644,11 @@ export interface QuranContextType extends QuranState {
   markAsRead: (surah: number, verse: number) => Promise<void>;
   startReadingSession: (mode: 'reading' | 'listening' | 'memorizing') => Promise<void>;
   endReadingSession: () => Promise<void>;
+  getCurrentReadingProgress: (surahNumber: number) => { 
+    lastReadVerse: number; 
+    completionPercentage: number; 
+    totalVerses: number; 
+  };
   
   // Bookmarks
   addBookmark: (surah: number, verse: number, label?: string, notes?: string) => Promise<void>;

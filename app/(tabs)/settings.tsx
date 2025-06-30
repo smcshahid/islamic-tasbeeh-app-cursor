@@ -22,6 +22,7 @@ import { SettingsErrorBoundary } from '../../src/components/ErrorBoundary';
 import PrayerSettingsModal from '../../src/components/PrayerSettingsModal';
 import ThemeSelector from '../../src/components/ThemeSelector';
 import ThemeDemoLauncher from '../../src/components/ThemeDemoLauncher';
+
 import { 
   getButtonA11yProps, 
   getToggleA11yProps,
@@ -445,6 +446,8 @@ export default function SettingsScreen() {
               style={styles.themeDemoButton}
             />
           </View>
+
+
 
           {/* Theme Test Screen - for debugging */}
           <SettingItem

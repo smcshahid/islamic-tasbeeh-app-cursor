@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import { getArabicTextStyle as getEnhancedArabicTextStyle } from './fonts';
 
 /**
  * Format duration in seconds to human-readable string
@@ -319,6 +320,29 @@ export const getPrayerDisplayTime = (
   };
 };
 
+/**
+ * Get consistent Arabic text styles for proper RTL rendering
+ * Now uses enhanced typography system
+ */
+export const getArabicTextStyle = (fontSize: number = 18, customStyle?: any) => {
+  return getEnhancedArabicTextStyle(fontSize, customStyle, 'quran');
+};
+
+/**
+ * Detect if text contains Arabic characters
+ */
+export const containsArabic = (text: string): boolean => {
+  const arabicRegex = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
+  return arabicRegex.test(text);
+};
+
+/**
+ * Get text direction based on content
+ */
+export const getTextDirection = (text: string): 'ltr' | 'rtl' => {
+  return containsArabic(text) ? 'rtl' : 'ltr';
+};
+
 export default {
   formatDuration,
   formatDate,
@@ -339,4 +363,7 @@ export default {
   formatAdjustedTime,
   getPrayerDisplayTime,
   adjustTime,
+  getArabicTextStyle,
+  containsArabic,
+  getTextDirection,
 }; 

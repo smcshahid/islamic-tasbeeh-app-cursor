@@ -58,6 +58,7 @@
       "expo-localization"
     ],
     "extra": {
+      "supportsRTL": true,
       "router": {},
       "eas": {
         "projectId": "0273799a-9917-4cae-ad12-50a19bf22785"

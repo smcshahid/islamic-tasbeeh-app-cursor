@@ -392,6 +392,7 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     dispatch({ type: 'UPDATE_LAST_READ', payload: { surah: surahNumber, verse: verseNumber } });
     await saveToStorage(STORAGE_KEYS.LAST_READ_POSITION, { surah: surahNumber, verse: verseNumber });
     hapticFeedback.light();
+    secureLogger.info('Navigated to surah and verse', { surah: surahNumber, verse: verseNumber });
   }, [saveToStorage]);
 
   const navigateToPage = useCallback(async (pageNumber: number) => {
@@ -413,6 +414,7 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const navigateToLastRead = useCallback(async () => {
     const { surah, verse } = state.lastReadPosition;
+    secureLogger.info('Continuing reading from last position', { surah, verse });
     await navigateToSurah(surah, verse);
   }, [state.lastReadPosition, navigateToSurah]);
 
@@ -420,7 +422,36 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const markAsRead = useCallback(async (surah: number, verse: number) => {
     dispatch({ type: 'UPDATE_LAST_READ', payload: { surah, verse } });
     await saveToStorage(STORAGE_KEYS.LAST_READ_POSITION, { surah, verse });
+    
+    // Also update current position
+    dispatch({ 
+      type: 'SET_CURRENT_POSITION', 
+      payload: { surah, verse } 
+    });
+    
+    secureLogger.info('Marked verse as read and updated position', { surah, verse });
   }, [saveToStorage]);
+
+  const getCurrentReadingProgress = useCallback((surahNumber: number) => {
+    // Get the current reading progress for a specific surah
+    const sessions = state.readingSessions.filter(s => s.startSurah === surahNumber);
+    if (sessions.length === 0) return { lastReadVerse: 0, completionPercentage: 0 };
+    
+    const latestSession = sessions.sort((a, b) => 
+      new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
+    )[0];
+    
+    const lastReadVerse = latestSession.endVerse || latestSession.startVerse || 0;
+    const surahMetadata = SURAH_METADATA.find(s => s.id === surahNumber);
+    const totalVerses = surahMetadata?.totalVerses || 1;
+    const completionPercentage = (lastReadVerse / totalVerses) * 100;
+    
+    return { 
+      lastReadVerse, 
+      completionPercentage: Math.round(completionPercentage),
+      totalVerses 
+    };
+  }, [state.readingSessions]);
 
   const startReadingSession = useCallback(async (mode: 'reading' | 'listening' | 'memorizing') => {
     const session: QuranReadingSession = {
@@ -503,20 +534,7 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       secureLogger.info('Starting audio playback', { surah, verse, reciter });
       
-      // Get the audio URL for the specific verse
-      const audioUrl = quranApi.getAudioUrl(
-        surah, 
-        verse || 1, 
-        reciter || state.settings.defaultReciter
-      );
-      
-      secureLogger.info('Generated audio URL', { 
-        surah, 
-        verse: verse || 1, 
-        audioUrl: audioUrl.substring(0, 50) + '...' 
-      });
-
-      // Update state to show audio is playing
+      // Update state to show that audio is being requested
       dispatch({ 
         type: 'SET_AUDIO_STATE', 
         payload: { 
@@ -527,71 +545,23 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             reciter: reciter || state.settings.defaultReciter, 
             position: 0, 
             duration: 0,
-            url: audioUrl
+            url: quranApi.getAudioUrl(surah, verse || 1, reciter || state.settings.defaultReciter)
           }
         } 
       });
 
-      // Try to play the audio using the browser/app's audio capabilities
-      try {
-        // Create an audio object if we're in a web environment
-        if (typeof window !== 'undefined' && window.Audio) {
-          const audio = new Audio(audioUrl);
-          audio.crossOrigin = 'anonymous';
-          
-          audio.addEventListener('loadstart', () => {
-            secureLogger.info('Audio loading started');
-          });
-          
-          audio.addEventListener('canplay', () => {
-            secureLogger.info('Audio can start playing');
-          });
-          
-          audio.addEventListener('ended', () => {
-            secureLogger.info('Audio playback ended');
-            dispatch({ type: 'SET_AUDIO_STATE', payload: { isPlaying: false } });
-          });
-          
-          audio.addEventListener('error', (error) => {
-            secureLogger.error('Audio playback error', { 
-              error: error.message || 'Unknown audio error',
-              audioUrl: audioUrl.substring(0, 50) + '...'
-            });
-            dispatch({ type: 'SET_AUDIO_STATE', payload: { isPlaying: false } });
-          });
-          
-          await audio.play();
-          hapticFeedback.light();
-          secureLogger.info('Audio playback started successfully');
-        } else {
-          // For mobile/React Native environment, we'll need a different approach
-          secureLogger.info('Web Audio not available, using fallback approach');
-          
-          // Just update the UI state for now - the actual audio implementation
-          // would depend on the mobile audio system being used
-          setTimeout(() => {
-            secureLogger.info('Simulated audio playback completed');
-            dispatch({ type: 'SET_AUDIO_STATE', payload: { isPlaying: false } });
-          }, 3000); // Simulate 3 seconds of audio
-          
-          hapticFeedback.light();
-        }
-      } catch (audioError) {
-        secureLogger.error('Failed to play audio', { 
-          error: audioError.message || String(audioError),
-          audioUrl: audioUrl.substring(0, 50) + '...'
-        });
-        
-        // Update state to show audio stopped
-        dispatch({ type: 'SET_AUDIO_STATE', payload: { isPlaying: false } });
-        
-        // Still provide haptic feedback to show the action was received
-        hapticFeedback.light();
-      }
+      // Provide haptic feedback
+      hapticFeedback.light();
+      
+      secureLogger.info('Audio playback request processed - UI should handle actual playback', { 
+        surah, 
+        verse: verse || 1,
+        reciter: reciter || state.settings.defaultReciter
+      });
       
     } catch (error) {
-      secureLogger.error('Error initializing audio playback', { 
-        error: error.message || String(error),
+      secureLogger.error('Error processing audio playback request', { 
+        error: error instanceof Error ? error.message : String(error),
         surah, 
         verse 
       });
@@ -779,6 +749,7 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     markAsRead,
     startReadingSession,
     endReadingSession,
+    getCurrentReadingProgress,
     
     // Bookmarks
     addBookmark,
