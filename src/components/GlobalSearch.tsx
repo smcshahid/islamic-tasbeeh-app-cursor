@@ -60,6 +60,7 @@ export default function GlobalSearch({ visible, onClose }: GlobalSearchProps) {
   const searchCategories: SearchCategory[] = [
     { id: 'screens', name: 'Screens', icon: 'apps', color: COLORS.primary.blue },
     { id: 'counters', name: 'Counters', icon: 'calculator', color: COLORS.primary.green },
+    { id: 'quran', name: 'Quran', icon: 'book', color: COLORS.primary.indigo },
     { id: 'prayers', name: 'Prayer Times', icon: 'time', color: COLORS.primary.purple },
     { id: 'settings', name: 'Settings', icon: 'settings', color: COLORS.primary.orange },
     { id: 'history', name: 'History', icon: 'library', color: COLORS.primary.teal },
@@ -85,6 +86,15 @@ export default function GlobalSearch({ visible, onClose }: GlobalSearchProps) {
       icon: 'time',
       screen: '/(tabs)/prayer-times',
       keywords: ['prayer', 'times', 'salah', 'adhan', 'islamic'],
+    },
+    {
+      id: 'quran-screen',
+      title: 'Quran',
+      subtitle: 'Read, listen, and study the Holy Quran',
+      category: 'screens',
+      icon: 'book',
+      screen: '/(tabs)/quran',
+      keywords: ['quran', 'holy', 'book', 'islam', 'read', 'recite', 'surah', 'verse'],
     },
     {
       id: 'history-screen',
@@ -232,6 +242,135 @@ export default function GlobalSearch({ visible, onClose }: GlobalSearchProps) {
         announceToScreenReader('Opening calculation method selection');
       },
       keywords: ['calculation', 'method', 'prayer', 'time', 'islamic', 'algorithm'],
+    },
+
+    // Quran Features
+    {
+      id: 'browse-surahs',
+      title: 'Browse Surahs',
+      subtitle: 'Navigate through all 114 Surahs',
+      category: 'quran',
+      icon: 'list',
+      screen: '/(tabs)/quran',
+      action: () => {
+        setPendingAction({
+          type: 'openSurahList',
+          screen: '/(tabs)/quran',
+        });
+        announceToScreenReader('Opening Surah list');
+      },
+      keywords: ['surah', 'browse', 'list', 'navigate', 'chapter'],
+    },
+    {
+      id: 'devout-reciter',
+      title: 'Devout Reciter Mode',
+      subtitle: 'Clean interface for focused recitation',
+      category: 'quran',
+      icon: 'book',
+      screen: '/(tabs)/quran',
+      keywords: ['reciter', 'recitation', 'reading', 'clean', 'focus', 'tajweed'],
+    },
+    {
+      id: 'knowledge-seeker',
+      title: 'Knowledge Seeker Mode',
+      subtitle: 'Tafsir, translations, and detailed study',
+      category: 'quran',
+      icon: 'school',
+      screen: '/(tabs)/quran',
+      keywords: ['knowledge', 'tafsir', 'translation', 'study', 'commentary', 'meaning'],
+    },
+    {
+      id: 'memorizer-mode',
+      title: 'Memorizer Mode',
+      subtitle: 'Tools for Quran memorization',
+      category: 'quran',
+      icon: 'brain',
+      screen: '/(tabs)/quran',
+      keywords: ['memorize', 'memorization', 'hafiz', 'hafiza', 'repeat', 'test'],
+    },
+    {
+      id: 'audio-recitation',
+      title: 'Audio Recitation',
+      subtitle: 'Listen to beautiful Quran recitations',
+      category: 'quran',
+      icon: 'headset',
+      screen: '/(tabs)/quran',
+      keywords: ['audio', 'recitation', 'listen', 'qari', 'sound', 'play'],
+    },
+    {
+      id: 'quran-search',
+      title: 'Search Quran',
+      subtitle: 'Find verses, topics, or words',
+      category: 'quran',
+      icon: 'search',
+      screen: '/(tabs)/quran',
+      action: () => {
+        setPendingAction({
+          type: 'openQuranSearch',
+          screen: '/(tabs)/quran',
+        });
+        announceToScreenReader('Opening Quran search');
+      },
+      keywords: ['search', 'find', 'verse', 'topic', 'word', 'ayah'],
+    },
+    {
+      id: 'quran-bookmarks',
+      title: 'Quran Bookmarks',
+      subtitle: 'Access your saved verses',
+      category: 'quran',
+      icon: 'bookmark',
+      screen: '/(tabs)/quran',
+      action: () => {
+        setPendingAction({
+          type: 'openQuranBookmarks',
+          screen: '/(tabs)/quran',
+        });
+        announceToScreenReader('Opening Quran bookmarks');
+      },
+      keywords: ['bookmark', 'saved', 'verse', 'favorite', 'mark'],
+    },
+    {
+      id: 'reading-progress',
+      title: 'Reading Progress',
+      subtitle: 'Track your Quran reading journey',
+      category: 'quran',
+      icon: 'stats-chart',
+      screen: '/(tabs)/quran',
+      keywords: ['progress', 'reading', 'journey', 'track', 'statistics'],
+    },
+    {
+      id: 'quran-translations',
+      title: 'Translations',
+      subtitle: 'Multiple trusted Quran translations',
+      category: 'quran',
+      icon: 'language',
+      screen: '/(tabs)/quran',
+      keywords: ['translation', 'english', 'meaning', 'sahih', 'pickthall'],
+    },
+    {
+      id: 'continue-reading',
+      title: 'Continue Reading',
+      subtitle: 'Resume from where you left off',
+      category: 'quran',
+      icon: 'play-circle',
+      screen: '/(tabs)/quran',
+      action: () => {
+        setPendingAction({
+          type: 'continueReading',
+          screen: '/(tabs)/quran',
+        });
+        announceToScreenReader('Continuing from last read position');
+      },
+      keywords: ['continue', 'resume', 'last', 'position', 'reading'],
+    },
+    {
+      id: 'quran-navigation',
+      title: 'Navigation',
+      subtitle: 'Navigate by Surah, Juz, or Page',
+      category: 'quran',
+      icon: 'compass',
+      screen: '/(tabs)/quran',
+      keywords: ['navigation', 'navigate', 'surah', 'juz', 'page', 'chapter', 'para'],
     },
 
     // Settings Features

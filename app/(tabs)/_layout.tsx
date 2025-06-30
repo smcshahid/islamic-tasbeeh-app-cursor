@@ -79,7 +79,7 @@ export default function TabLayout() {
               accessibilityLabel={`Counter tab${focused ? ', selected' : ''}`}
             />
           ),
-          ...accessibilityManager.getTabAccessibilityProps('Counter', false, 0, 4)
+          ...accessibilityManager.getTabAccessibilityProps('Counter', false, 0, 5)
         }}
       />
       <Tabs.Screen
@@ -104,7 +104,32 @@ export default function TabLayout() {
               accessibilityLabel={`Prayer Times tab${focused ? ', selected' : ''}`}
             />
           ),
-          ...accessibilityManager.getTabAccessibilityProps('Prayer Times', false, 1, 4)
+          ...accessibilityManager.getTabAccessibilityProps('Prayer Times', false, 1, 5)
+        }}
+      />
+      <Tabs.Screen
+        name="quran"
+        options={{
+          title: 'Quran',
+          headerShown: true,
+          headerStyle: {
+            backgroundColor: colors.islamic.navy,
+          },
+          headerTintColor: colors.text.onPrimary,
+          headerTitleStyle: {
+            fontWeight: '600',
+          },
+          headerRight: SearchButton,
+          tabBarAccessibilityLabel: 'Quran tab',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? 'book' : 'book-outline'}
+              size={24}
+              color={color}
+              accessibilityLabel={`Quran tab${focused ? ', selected' : ''}`}
+            />
+          ),
+          ...accessibilityManager.getTabAccessibilityProps('Quran', false, 2, 5)
         }}
       />
       <Tabs.Screen
@@ -129,7 +154,7 @@ export default function TabLayout() {
               accessibilityLabel={`History tab${focused ? ', selected' : ''}`}
             />
           ),
-          ...accessibilityManager.getTabAccessibilityProps('History', false, 2, 4)
+          ...accessibilityManager.getTabAccessibilityProps('History', false, 3, 5)
         }}
       />
       <Tabs.Screen
@@ -154,7 +179,7 @@ export default function TabLayout() {
               accessibilityLabel={`Settings tab${focused ? ', selected' : ''}`}
             />
           ),
-          ...accessibilityManager.getTabAccessibilityProps('Settings', false, 3, 4)
+          ...accessibilityManager.getTabAccessibilityProps('Settings', false, 4, 5)
         }}
       />
     </Tabs>

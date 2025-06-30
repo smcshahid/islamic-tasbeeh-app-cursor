@@ -3,4 +3,4 @@ description:
 globs: 
 alwaysApply: true
 ---
-if required Check the functions, methods, types or classes in the node_modules for a relevant libraries. 
+Validate functions, classes, types or methods from a particular library's node_modules, if any issue arise.

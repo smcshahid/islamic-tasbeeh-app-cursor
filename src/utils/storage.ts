@@ -30,6 +30,34 @@ interface TasbeehExportData {
 }
 
 export const storage = {
+  // Generic data operations
+  async getData(key: string): Promise<any | null> {
+    try {
+      const data = await AsyncStorage.getItem(key);
+      return data ? JSON.parse(data) : null;
+    } catch (error) {
+      secureLogger.error(`Error loading data for key: ${key}`, error, 'Storage');
+      return null;
+    }
+  },
+
+  async storeData(key: string, value: any): Promise<void> {
+    try {
+      await AsyncStorage.setItem(key, JSON.stringify(value));
+    } catch (error) {
+      secureLogger.error(`Error storing data for key: ${key}`, error, 'Storage');
+      throw error;
+    }
+  },
+
+  async removeData(key: string): Promise<void> {
+    try {
+      await AsyncStorage.removeItem(key);
+    } catch (error) {
+      secureLogger.error(`Error removing data for key: ${key}`, error, 'Storage');
+      throw error;
+    }
+  },
   // Counter operations
   async getCounters(): Promise<Counter[]> {
     try {

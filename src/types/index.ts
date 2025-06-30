@@ -406,4 +406,298 @@ export interface SearchCategory {
   name: string;
   icon: string;
   color: string;
+}
+
+// Quran Feature Types
+export interface QuranVerse {
+  id: number;
+  verseNumber: number;
+  text: string; // Arabic text
+  translation: string;
+  transliteration?: string;
+  audioUrl?: string;
+  page: number;
+  juz: number;
+  hizb: number;
+  rukuNumber: number;
+  manzil: number;
+  sajda?: boolean; // If this verse requires sajda
+}
+
+export interface QuranSurah {
+  id: number;
+  name: string; // Arabic name
+  englishName: string;
+  meaning: string;
+  verses: QuranVerse[];
+  totalVerses: number;
+  revelationType: 'meccan' | 'medinan';
+  revelationOrder: number;
+  bismillahPre: boolean; // Whether Bismillah comes before this surah
+}
+
+export interface QuranTranslation {
+  id: string;
+  name: string;
+  author: string;
+  language: string;
+  languageCode: string;
+  isDefault?: boolean;
+}
+
+export interface QuranReciter {
+  id: string;
+  name: string;
+  language: string;
+  style: 'murattal' | 'muallim' | 'translation';
+  audioQuality: 'low' | 'medium' | 'high';
+  baseUrl: string;
+  isOfflineAvailable?: boolean;
+}
+
+export interface QuranBookmark {
+  id: string;
+  surahNumber: number;
+  verseNumber: number;
+  label?: string;
+  notes?: string;
+  color?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface QuranReadingSession {
+  id: string;
+  startTime: string;
+  endTime?: string;
+  startSurah: number;
+  startVerse: number;
+  endSurah?: number;
+  endVerse?: number;
+  duration: number; // in seconds
+  versesRead: number;
+  mode: 'reading' | 'listening' | 'memorizing';
+}
+
+export interface QuranMemorizationProgress {
+  id: string;
+  surahNumber: number;
+  verseNumber: number;
+  status: 'learning' | 'reviewing' | 'mastered';
+  accuracy: number; // 0-100
+  lastReviewed: string;
+  timesReviewed: number;
+  mistakes: string[]; // Common mistakes made
+}
+
+export interface QuranReadingPlan {
+  id: string;
+  name: string;
+  type: 'complete_quran' | 'daily_pages' | 'weekly_surah' | 'custom';
+  duration: number; // days
+  dailyTarget: {
+    pages?: number;
+    verses?: number;
+    surahs?: number[];
+  };
+  startDate: string;
+  isActive: boolean;
+  progress: {
+    currentSurah: number;
+    currentVerse: number;
+    completedDays: number;
+    streakDays: number;
+  };
+}
+
+export interface QuranTafsir {
+  id: string;
+  name: string;
+  author: string;
+  language: string;
+  languageCode: string;
+  description: string;
+}
+
+export interface QuranWordAnalysis {
+  text: string;
+  translation: string;
+  transliteration: string;
+  root: string;
+  grammar: string;
+  morphology: string;
+}
+
+export interface QuranSearchResult extends SearchResult {
+  surahNumber: number;
+  verseNumber: number;
+  text: string;
+  translation: string;
+  context?: string;
+  relevanceScore: number;
+}
+
+export interface QuranSettings {
+  // Display settings
+  arabicFont: 'uthmani' | 'indopak' | 'madani';
+  arabicFontSize: number; // 12-32
+  translationFontSize: number; // 10-24
+  showTranslation: boolean; // Enable/disable translation display
+  showTransliteration: boolean;
+  showWordByWord: boolean;
+  showVerseNumbers: boolean;
+  
+  // Reading settings
+  defaultTranslation: string; // Translation ID
+  secondaryTranslation?: string; // Optional second translation
+  defaultReciter: string; // Reciter ID
+  
+  // Audio settings
+  audioPlaybackSpeed: number; // 0.5-2.0
+  autoAdvanceVerse: boolean;
+  repeatMode: 'none' | 'verse' | 'page' | 'surah';
+  repeatCount: number; // 1-10
+  
+  // Memorization settings
+  memorationMode: boolean;
+  hideArabicText: boolean;
+  hideTranslation: boolean;
+  showMistakeHighlights: boolean;
+  
+  // Reading plan settings
+  dailyReadingReminder: boolean;
+  reminderTime: string; // HH:MM
+  weeklyGoalEnabled: boolean;
+  monthlyGoalEnabled: boolean;
+  
+  // Accessibility
+  voiceoverEnabled: boolean;
+  highContrastMode: boolean;
+  reducedMotion: boolean;
+  
+  // Offline settings
+  downloadedRecitations: string[]; // Reciter IDs
+  downloadedTranslations: string[]; // Translation IDs
+  offlineModeEnabled: boolean;
+}
+
+export interface QuranState {
+  // Current reading state
+  currentSurah: number;
+  currentVerse: number;
+  currentPage: number;
+  currentJuz: number;
+  
+  // Data
+  surahs: QuranSurah[];
+  translations: QuranTranslation[];
+  reciters: QuranReciter[];
+  tafsirs: QuranTafsir[];
+  
+  // User data
+  bookmarks: QuranBookmark[];
+  readingSessions: QuranReadingSession[];
+  memorationProgress: QuranMemorizationProgress[];
+  readingPlans: QuranReadingPlan[];
+  
+  // Settings
+  settings: QuranSettings;
+  
+  // App state
+  isLoading: boolean;
+  error: string | null;
+  
+  // Audio state
+  isPlaying: boolean;
+  currentAudio?: {
+    surah: number;
+    verse: number;
+    reciter: string;
+    position: number; // in seconds
+    duration: number;
+  };
+  
+  // Search state
+  searchResults: QuranSearchResult[];
+  searchHistory: string[];
+  
+  // Reading mode
+  readingMode: 'normal' | 'night' | 'focus' | 'memorization';
+  isFullscreen: boolean;
+  
+  // Last read position
+  lastReadPosition: {
+    surah: number;
+    verse: number;
+    timestamp: string;
+  };
+}
+
+export interface QuranContextType extends QuranState {
+  // Navigation
+  navigateToSurah: (surahNumber: number, verseNumber?: number) => Promise<void>;
+  navigateToPage: (pageNumber: number) => Promise<void>;
+  navigateToJuz: (juzNumber: number) => Promise<void>;
+  navigateToLastRead: () => Promise<void>;
+  
+  // Reading
+  markAsRead: (surah: number, verse: number) => Promise<void>;
+  startReadingSession: (mode: 'reading' | 'listening' | 'memorizing') => Promise<void>;
+  endReadingSession: () => Promise<void>;
+  
+  // Bookmarks
+  addBookmark: (surah: number, verse: number, label?: string, notes?: string) => Promise<void>;
+  removeBookmark: (bookmarkId: string) => Promise<void>;
+  updateBookmark: (bookmarkId: string, updates: Partial<QuranBookmark>) => Promise<void>;
+  
+  // Memorization
+  startMemorization: (surah: number, verse: number) => Promise<void>;
+  recordMemorizationAttempt: (surah: number, verse: number, accuracy: number, mistakes: string[]) => Promise<void>;
+  getMemorizationStats: () => any;
+  
+  // Audio
+  playAudio: (surah: number, verse?: number, reciter?: string) => Promise<void>;
+  pauseAudio: () => Promise<void>;
+  stopAudio: () => Promise<void>;
+  seekAudio: (position: number) => Promise<void>;
+  setPlaybackSpeed: (speed: number) => Promise<void>;
+  
+  // Search
+  searchQuran: (query: string, options?: {
+    includeTranslation?: boolean;
+    includeTransliteration?: boolean;
+    surahFilter?: number[];
+    limit?: number;
+  }) => Promise<QuranSearchResult[]>;
+  clearSearch: () => void;
+  
+  // Reading Plans
+  createReadingPlan: (plan: Omit<QuranReadingPlan, 'id' | 'progress'>) => Promise<void>;
+  updateReadingPlan: (planId: string, updates: Partial<QuranReadingPlan>) => Promise<void>;
+  deleteReadingPlan: (planId: string) => Promise<void>;
+  markPlanProgress: (planId: string, surah: number, verse: number) => Promise<void>;
+  
+  // Settings
+  updateQuranSettings: (updates: Partial<QuranSettings>) => Promise<void>;
+  
+  // Offline/Download
+  downloadRecitation: (reciterId: string, surahNumbers?: number[]) => Promise<void>;
+  downloadTranslation: (translationId: string) => Promise<void>;
+  checkOfflineContent: () => Promise<{ available: boolean; size: string }>;
+  
+  // Word analysis
+  getWordAnalysis: (surah: number, verse: number, wordIndex: number) => Promise<QuranWordAnalysis>;
+  
+  // Tafsir
+  getTafsir: (surah: number, verse: number, tafsirId?: string) => Promise<string>;
+  
+  // Statistics
+  getReadingStats: () => {
+    totalTimeSpent: number;
+    versesRead: number;
+    surahs: number;
+    currentStreak: number;
+    longestStreak: number;
+    memorizedVerses: number;
+  };
 } 

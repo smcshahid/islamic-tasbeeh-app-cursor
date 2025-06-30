@@ -1,0 +1,10 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+✅ No crashes from undefined properties
+✅ No error alerts disrupting workflow
+✅ Automatic recovery from API failures, if any.
+
+✅ Comprehensive fallbacks for all features

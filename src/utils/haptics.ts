@@ -177,4 +177,29 @@ export const playSuccessHaptic = () =>
   hapticManager.playSuccessHaptic();
 
 export const setHapticsEnabled = (enabled: boolean) => 
-  hapticManager.setEnabled(enabled); 
+  hapticManager.setEnabled(enabled);
+
+// Export hapticFeedback object for backward compatibility
+export const hapticFeedback = {
+  light: async () => {
+    try {
+      await playSimpleHaptic();
+    } catch (error) {
+      // Silently handle haptic errors
+    }
+  },
+  success: async () => {
+    try {
+      await playSuccessHaptic();
+    } catch (error) {
+      // Silently handle haptic errors
+    }
+  },
+  error: async () => {
+    try {
+      await playErrorHaptic();
+    } catch (error) {
+      // Silently handle haptic errors
+    }
+  }
+}; 
