@@ -22,6 +22,9 @@ import QuranReader from '../../src/components/QuranReader';
 import QuranAudioPlayer from '../../src/components/QuranAudioPlayer';
 import QuranMemorizationTools from '../../src/components/QuranMemorizationTools';
 import QuranAdvancedSearch from '../../src/components/QuranAdvancedSearch';
+import QuranJuzNavigation from '../../src/components/QuranJuzNavigation';
+import QuranPageNavigation from '../../src/components/QuranPageNavigation';
+import QuranBookmarkManager from '../../src/components/QuranBookmarkManager';
 import { QuranSurah } from '../../src/types';
 
 interface QuickActionProps {
@@ -104,9 +107,15 @@ const QuranDashboard: React.FC = () => {
   const [showPlaylistPlayer, setShowPlaylistPlayer] = useState(false);
   const [showMemorizationTools, setShowMemorizationTools] = useState(false);
   const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
+  const [showJuzNavigation, setShowJuzNavigation] = useState(false);
+  const [showPageNavigation, setShowPageNavigation] = useState(false);
+  const [showBookmarkManager, setShowBookmarkManager] = useState(false);
   const [readerMode, setReaderMode] = useState<'reciter' | 'seeker' | 'memorizer' | 'auditory' | 'beginner' | 'normal'>('normal');
   const [selectedSurah, setSelectedSurah] = useState(1);
   const [selectedVerse, setSelectedVerse] = useState(1);
+  const [selectedJuzData, setSelectedJuzData] = useState<any>(null);
+  const [selectedPageData, setSelectedPageData] = useState<any>(null);
+  const [highlightBookmark, setHighlightBookmark] = useState<{ surah: number; verse: number } | null>(null);
 
   const quickActions = [
     {
@@ -139,7 +148,7 @@ const QuranDashboard: React.FC = () => {
       icon: 'bookmark',
       title: 'My Bookmarks',
       subtitle: 'Access your saved verses',
-      onPress: () => Alert.alert('Bookmarks', 'Bookmarks management coming soon!'),
+      onPress: () => setShowBookmarkManager(true),
       color: colors.accent,
     },
     {
@@ -203,7 +212,7 @@ const QuranDashboard: React.FC = () => {
       badge: 'Popular',
     },
     {
-      icon: 'barbell',
+      icon: 'fitness',
       title: 'Memorizer (Hafiz)',
       description: 'Specialized tools for memorization, testing, and progress tracking',
       onPress: () => {
@@ -367,7 +376,7 @@ const QuranDashboard: React.FC = () => {
             
             <TouchableOpacity
               style={[styles.navButton, { backgroundColor: colors.secondary }]}
-              onPress={() => Alert.alert('Coming Soon', 'Juz (Para) navigation will be available in the next update!')}
+              onPress={() => setShowJuzNavigation(true)}
               {...getButtonA11yProps('Browse by Juz', 'Navigate through 30 Juz (Parts)', false)}
             >
               <Ionicons name="layers" size={24} color={colors.text.onSecondary} />
@@ -378,7 +387,7 @@ const QuranDashboard: React.FC = () => {
 
             <TouchableOpacity
               style={[styles.navButton, { backgroundColor: colors.accent }]}
-              onPress={() => Alert.alert('Coming Soon', 'Page-based navigation will be available in the next update!')}
+              onPress={() => setShowPageNavigation(true)}
               {...getButtonA11yProps('Browse by Page', 'Navigate through Quran pages', false)}
             >
               <Ionicons name="document" size={24} color={colors.text.onAccent} />
@@ -433,6 +442,10 @@ const QuranDashboard: React.FC = () => {
           setSelectedSurah(surah.id);
           setSelectedVerse(1);
           setReaderMode('normal');
+          // Clear navigation data
+          setSelectedJuzData(null);
+          setSelectedPageData(null);
+          setHighlightBookmark(null);
           setShowSurahList(false);
           setShowReader(true);
         }}
@@ -444,10 +457,16 @@ const QuranDashboard: React.FC = () => {
       {/* Quran Reader */}
       <QuranReader
         visible={showReader}
-        onClose={() => setShowReader(false)}
+        onClose={() => {
+          setShowReader(false);
+          setHighlightBookmark(null);
+        }}
         initialSurah={selectedSurah}
         initialVerse={selectedVerse}
         mode={readerMode}
+        juzData={selectedJuzData}
+        pageData={selectedPageData}
+        highlightBookmark={highlightBookmark}
       />
 
       {/* Quran Audio Player */}
@@ -486,6 +505,64 @@ const QuranDashboard: React.FC = () => {
           setSelectedVerse(verse);
           setReaderMode('seeker');
           setShowAdvancedSearch(false);
+          setShowReader(true);
+        }}
+      />
+
+      {/* Juz Navigation */}
+      <QuranJuzNavigation
+        visible={showJuzNavigation}
+        onClose={() => setShowJuzNavigation(false)}
+        onJuzSelect={(juzData) => {
+          secureLogger.info('Juz selected from navigation', juzData);
+          
+          // Set Juz mode and data
+          setReaderMode('juz');
+          setSelectedJuzData(juzData);
+          setSelectedPageData(null);
+          setHighlightBookmark(null);
+          
+          setShowJuzNavigation(false);
+          setShowReader(true);
+        }}
+      />
+
+      {/* Page Navigation */}
+      <QuranPageNavigation
+        visible={showPageNavigation}
+        onClose={() => setShowPageNavigation(false)}
+        onPageSelect={(pageData) => {
+          secureLogger.info('Page selected from navigation', pageData);
+          
+          // Set Page mode and data
+          setReaderMode('page');
+          setSelectedPageData(pageData);
+          setSelectedJuzData(null);
+          setHighlightBookmark(null);
+          
+          setShowPageNavigation(false);
+          setShowReader(true);
+        }}
+      />
+
+      {/* Bookmark Manager */}
+      <QuranBookmarkManager
+        visible={showBookmarkManager}
+        onClose={() => setShowBookmarkManager(false)}
+        onBookmarkSelect={(surah, verse) => {
+          secureLogger.info('Bookmark selected', { surah, verse });
+          
+          // Set highlight for the bookmarked verse
+          setHighlightBookmark({ surah, verse });
+          setSelectedSurah(surah);
+          setSelectedVerse(verse);
+          setReaderMode('normal');
+          
+          // Clear other navigation modes
+          setSelectedJuzData(null);
+          setSelectedPageData(null);
+          
+          setShowBookmarkManager(false);
           setShowReader(true);
         }}
       />

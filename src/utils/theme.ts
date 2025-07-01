@@ -1,6 +1,15 @@
 import { useColorScheme } from 'react-native';
 import { useTasbeeh } from '../contexts/TasbeehContext';
 
+// Default settings fallback
+const DEFAULT_SETTINGS = {
+  theme: 'auto' as const,
+  language: 'en' as const,
+  hapticFeedback: true,
+  notifications: true,
+  autoSync: false,
+};
+
 // Enhanced theme type definitions
 export type ThemeName = 'auto' | 'light' | 'dark' | 'medina' | 'fzhh-blue' | 'white-gold';
 
@@ -353,7 +362,16 @@ const themes: Record<ThemeName, ThemeDefinition> = {
 // Enhanced theme hook
 export function useAppTheme() {
   const systemTheme = useColorScheme();
-  const { settings } = useTasbeeh();
+  
+  // Defensive programming: handle case where context isn't ready yet
+  let settings = DEFAULT_SETTINGS;
+  try {
+    const tasbeehContext = useTasbeeh();
+    settings = tasbeehContext?.settings || DEFAULT_SETTINGS;
+  } catch (error) {
+    // Context not ready yet, use defaults
+    settings = DEFAULT_SETTINGS;
+  }
   
   // Get user's selected theme or default to 'auto'
   const selectedTheme = (settings.theme as ThemeName) || 'auto';
@@ -366,8 +384,8 @@ export function useAppTheme() {
     resolvedTheme = selectedTheme;
   }
   
-  // Get theme definition
-  const themeDefinition = themes[resolvedTheme];
+  // Get theme definition with fallback
+  const themeDefinition = themes[resolvedTheme] || themes.light;
   
   // For backward compatibility
   const isDark = themeDefinition.isDark;

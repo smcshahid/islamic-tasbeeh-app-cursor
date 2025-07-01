@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
-  FlatList,
   ScrollView,
   TouchableOpacity,
   StyleSheet,
@@ -11,10 +10,10 @@ import {
   Modal,
   Dimensions,
   Platform,
-  ViewToken,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { FlashList } from '@shopify/flash-list';
 import { useAppTheme } from '../utils/theme';
 import { useQuranContext } from '../contexts/QuranContext';
 import { QuranVerse, QuranSurah } from '../types';
@@ -32,13 +31,36 @@ interface QuranReaderProps {
   onClose: () => void;
   initialSurah?: number;
   initialVerse?: number;
-  mode?: 'reciter' | 'seeker' | 'memorizer' | 'auditory' | 'beginner' | 'normal';
+  mode?: 'reciter' | 'seeker' | 'memorizer' | 'auditory' | 'beginner' | 'normal' | 'juz' | 'page';
+  juzData?: {
+    juzNumber: number;
+    startSurah: number;
+    startVerse: number;
+    endSurah: number;
+    endVerse: number;
+    name: string;
+    arabicName: string;
+  };
+  pageData?: {
+    pageNumber: number;
+    startSurah: number;
+    startVerse: number;
+    endSurah: number;
+    endVerse: number;
+    juzNumber: number;
+    description: string;
+  };
+  highlightBookmark?: {
+    surah: number;
+    verse: number;
+  };
 }
 
 interface VerseComponentProps {
   verse: QuranVerse;
   surahNumber: number;
   isBookmarked: boolean;
+  isHighlighted: boolean;
   showTranslation: boolean;
   showTransliteration: boolean;
   showWordByWord: boolean;
@@ -59,6 +81,7 @@ const VerseComponent: React.FC<VerseComponentProps> = ({
   verse,
   surahNumber,
   isBookmarked,
+  isHighlighted,
   showTranslation,
   showTransliteration,
   showWordByWord,
@@ -77,8 +100,25 @@ const VerseComponent: React.FC<VerseComponentProps> = ({
   const { colors } = useAppTheme();
   const { markAsRead } = useQuranContext();
   const [hasBeenRead, setHasBeenRead] = useState(false);
+  const [bookmarkPulse, setBookmarkPulse] = useState(false);
   const visibilityTimerRef = useRef<NodeJS.Timeout | null>(null);
   
+  // Handle bookmark pulse effect
+  useEffect(() => {
+    if (isBookmarked) {
+      setBookmarkPulse(true);
+      setTimeout(() => setBookmarkPulse(false), 300);
+    }
+  }, [isBookmarked]);
+  
+  // Enhanced highlight effect
+  useEffect(() => {
+    if (isHighlighted) {
+      // Add a small vibration for highlighted verse
+      hapticFeedback.light();
+    }
+  }, [isHighlighted]);
+
   // Handle visibility changes and reading timer
   useEffect(() => {
     if (isVisible && !hasBeenRead) {
@@ -202,19 +242,29 @@ const VerseComponent: React.FC<VerseComponentProps> = ({
       style={[
         styles.verseContainer,
         {
-          backgroundColor: colors.surface,
-          borderColor: isCurrentlyPlaying ? colors.primary : colors.border,
+          backgroundColor: isHighlighted 
+            ? colors.accent + '20'  // Special highlight color for bookmarked verses
+            : colors.surface,
+          borderColor: isHighlighted 
+            ? colors.accent + '80'
+            : isCurrentlyPlaying 
+            ? colors.primary 
+            : colors.border,
+          borderWidth: isHighlighted ? 3 : isCurrentlyPlaying ? 2 : 1,
           marginBottom: readingMode === 'focus' ? 24 : 16,
           padding: readingMode === 'focus' ? 24 : 16,
           opacity: hasBeenRead ? 1 : 0.95,
-          borderWidth: isVisible ? 2 : 1,
-          borderColor: isCurrentlyPlaying ? colors.primary : 
-                      isVisible ? colors.primary + '40' : colors.border,
+          // Enhanced shadow for highlighted verses
+          shadowColor: isHighlighted ? colors.accent : colors.shadow,
+          shadowOffset: isHighlighted ? { width: 0, height: 4 } : { width: 0, height: 2 },
+          shadowOpacity: isHighlighted ? 0.3 : 0.1,
+          shadowRadius: isHighlighted ? 8 : 4,
+          elevation: isHighlighted ? 8 : 2,
         }
       ]}
       onPress={() => onVersePress(verse)}
       {...getButtonA11yProps(
-        `Verse ${verse.verseNumber}`,
+        `Verse ${verse.verseNumber}${isBookmarked ? ' (Bookmarked)' : ''}${isHighlighted ? ' (Highlighted)' : ''}`,
         `${verse.text}. ${showTranslation ? verse.translation : ''}`,
         false
       )}
@@ -270,7 +320,17 @@ const VerseComponent: React.FC<VerseComponentProps> = ({
           </TouchableOpacity>
           
           <TouchableOpacity
-            style={styles.actionButton}
+            style={[
+              styles.actionButton,
+              {
+                backgroundColor: isBookmarked 
+                  ? colors.accent + '20' 
+                  : 'transparent',
+                borderWidth: isBookmarked ? 1 : 0,
+                borderColor: isBookmarked ? colors.accent : 'transparent',
+                transform: bookmarkPulse ? [{ scale: 1.1 }] : [{ scale: 1 }],
+              }
+            ]}
             onPress={() => onBookmarkToggle(verse)}
             {...getButtonA11yProps(
               isBookmarked ? 'Remove bookmark' : 'Add bookmark',
@@ -283,6 +343,13 @@ const VerseComponent: React.FC<VerseComponentProps> = ({
               size={20} 
               color={isBookmarked ? colors.accent : colors.text.secondary} 
             />
+            {isBookmarked && (
+              <View style={[styles.bookmarkIndicator, { backgroundColor: colors.accent }]}>
+                <Text style={[styles.bookmarkIndicatorText, { color: colors.text.onAccent }]}>
+                  ●
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -336,6 +403,9 @@ const QuranReader: React.FC<QuranReaderProps> = ({
   initialSurah = 1,
   initialVerse = 1,
   mode = 'normal',
+  juzData,
+  pageData,
+  highlightBookmark,
 }) => {
   const { colors } = useAppTheme();
   const {
@@ -353,13 +423,15 @@ const QuranReader: React.FC<QuranReaderProps> = ({
   } = useQuranContext();
 
   const [surah, setSurah] = useState<QuranSurah | null>(null);
+  // New state for multi-surah content (juz/page modes)
+  const [multiSurahContent, setMultiSurahContent] = useState<QuranSurah[]>([]);
+  const [displayMode, setDisplayMode] = useState<'single' | 'multi'>('single');
   const [isLoading, setIsLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [showTafsir, setShowTafsir] = useState(false);
   const [selectedVerse, setSelectedVerse] = useState<QuranVerse | null>(null);
   const [tafsirText, setTafsirText] = useState('');
   const [wordAnalysis, setWordAnalysis] = useState<any>(null);
-  const [visibleVerses, setVisibleVerses] = useState<Set<number>>(new Set());
   
   // Audio player state
   const [showAudioPlayer, setShowAudioPlayer] = useState(false);
@@ -370,7 +442,10 @@ const QuranReader: React.FC<QuranReaderProps> = ({
   const [audioState, setAudioState] = useState<AudioState>(unifiedAudioService.getState());
   const [currentPlayingVerse, setCurrentPlayingVerse] = useState<number | null>(null);
   
-  const flatListRef = useRef<FlatList>(null);
+  // Simplified bookmark highlighting
+  const [highlightedVerse, setHighlightedVerse] = useState<{ surah: number; verse: number } | null>(null);
+  
+  const flashListRef = useRef<FlashList<QuranVerse>>(null);
 
   // Listen to audio state changes
   useEffect(() => {
@@ -434,6 +509,22 @@ const QuranReader: React.FC<QuranReaderProps> = ({
           arabicFontSize: settings.arabicFontSize,
           readingMode: 'normal',
         };
+      case 'juz':
+        return {
+          showTranslation: settings.showTranslation !== false,
+          showTransliteration: settings.showTransliteration,
+          showWordByWord: false, // Simplified for multi-surah view
+          arabicFontSize: settings.arabicFontSize,
+          readingMode: 'normal',
+        };
+      case 'page':
+        return {
+          showTranslation: settings.showTranslation !== false,
+          showTransliteration: settings.showTransliteration,
+          showWordByWord: false, // Simplified for multi-surah view
+          arabicFontSize: settings.arabicFontSize,
+          readingMode: 'normal',
+        };
       default:
         return {
           showTranslation: settings.showTranslation !== false,
@@ -449,28 +540,39 @@ const QuranReader: React.FC<QuranReaderProps> = ({
 
   useEffect(() => {
     if (visible) {
-      loadSurah(initialSurah);
+      if (mode === 'juz' && juzData) {
+        loadJuzContent(juzData);
+      } else if (mode === 'page' && pageData) {
+        loadPageContent(pageData);
+      } else {
+        loadSurah(initialSurah);
+      }
+      
+      // Handle bookmark highlighting
+      if (highlightBookmark) {
+        setHighlightedVerse(highlightBookmark);
+        // Clear highlight after 5 seconds
+        setTimeout(() => {
+          setHighlightedVerse(null);
+        }, 5000);
+      }
     }
-  }, [visible, initialSurah]);
+  }, [visible, initialSurah, mode, juzData, pageData, highlightBookmark]);
 
   const loadSurah = async (surahNumber: number) => {
     try {
       setIsLoading(true);
-      secureLogger.info('Loading surah for reading', { surahNumber, mode });
+      setDisplayMode('single');
+      secureLogger.info('Loading surah for reading', { surahNumber, mode, highlightBookmark });
       
       const surahData = await quranApi.getSurah(surahNumber, settings.defaultTranslation);
       setSurah(surahData);
+      setMultiSurahContent([]);
       secureLogger.info('Surah loaded successfully for reading', { 
         surahNumber, 
         verses: surahData.verses.length 
       });
       
-      // Navigate to initial verse if specified
-      if (initialVerse > 1) {
-        setTimeout(() => {
-          scrollToVerse(initialVerse);
-        }, 1000);
-      }
     } catch (error) {
       secureLogger.error('Error loading surah for reading', error);
       Alert.alert('Error', 'Unable to load Surah. Please try again.');
@@ -479,67 +581,172 @@ const QuranReader: React.FC<QuranReaderProps> = ({
     }
   };
 
+  const loadJuzContent = async (juz: typeof juzData) => {
+    if (!juz) return;
+    
+    try {
+      setIsLoading(true);
+      setDisplayMode('multi');
+      secureLogger.info('Loading Juz content', { 
+        juzNumber: juz.juzNumber, 
+        startSurah: juz.startSurah, 
+        endSurah: juz.endSurah 
+      });
+      
+      const surahs: QuranSurah[] = [];
+      
+      // Load all surahs in the Juz range
+      for (let surahNum = juz.startSurah; surahNum <= juz.endSurah; surahNum++) {
+        const surahData = await quranApi.getSurah(surahNum, settings.defaultTranslation);
+        
+        // Filter verses based on Juz boundaries
+        let filteredVerses = surahData.verses;
+        
+        if (surahNum === juz.startSurah && surahNum === juz.endSurah) {
+          // Single surah spanning partial Juz
+          filteredVerses = surahData.verses.filter(v => 
+            v.verseNumber >= juz.startVerse && v.verseNumber <= juz.endVerse
+          );
+        } else if (surahNum === juz.startSurah) {
+          // First surah in Juz - from startVerse to end
+          filteredVerses = surahData.verses.filter(v => v.verseNumber >= juz.startVerse);
+        } else if (surahNum === juz.endSurah) {
+          // Last surah in Juz - from start to endVerse
+          filteredVerses = surahData.verses.filter(v => v.verseNumber <= juz.endVerse);
+        }
+        // Middle surahs use all verses
+        
+        if (filteredVerses.length > 0) {
+          surahs.push({
+            ...surahData,
+            verses: filteredVerses
+          });
+        }
+      }
+      
+      setMultiSurahContent(surahs);
+      setSurah(null);
+      secureLogger.info('Juz content loaded successfully', { 
+        juzNumber: juz.juzNumber,
+        surahsLoaded: surahs.length,
+        totalVerses: surahs.reduce((sum, s) => sum + s.verses.length, 0)
+      });
+      
+    } catch (error) {
+      secureLogger.error('Error loading Juz content', error);
+      Alert.alert('Error', 'Unable to load Juz content. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadPageContent = async (page: typeof pageData) => {
+    if (!page) return;
+    
+    try {
+      setIsLoading(true);
+      setDisplayMode('multi');
+      secureLogger.info('Loading Page content', { 
+        pageNumber: page.pageNumber, 
+        startSurah: page.startSurah, 
+        endSurah: page.endSurah 
+      });
+      
+      const surahs: QuranSurah[] = [];
+      
+      // Load all surahs in the Page range
+      for (let surahNum = page.startSurah; surahNum <= page.endSurah; surahNum++) {
+        const surahData = await quranApi.getSurah(surahNum, settings.defaultTranslation);
+        
+        // Filter verses based on Page boundaries
+        let filteredVerses = surahData.verses;
+        
+        if (surahNum === page.startSurah && surahNum === page.endSurah) {
+          // Single surah on page
+          filteredVerses = surahData.verses.filter(v => 
+            v.verseNumber >= page.startVerse && v.verseNumber <= page.endVerse
+          );
+        } else if (surahNum === page.startSurah) {
+          // First surah on page - from startVerse to end
+          filteredVerses = surahData.verses.filter(v => v.verseNumber >= page.startVerse);
+        } else if (surahNum === page.endSurah) {
+          // Last surah on page - from start to endVerse
+          filteredVerses = surahData.verses.filter(v => v.verseNumber <= page.endVerse);
+        }
+        // Middle surahs use all verses
+        
+        if (filteredVerses.length > 0) {
+          surahs.push({
+            ...surahData,
+            verses: filteredVerses
+          });
+        }
+      }
+      
+      setMultiSurahContent(surahs);
+      setSurah(null);
+      secureLogger.info('Page content loaded successfully', { 
+        pageNumber: page.pageNumber,
+        surahsLoaded: surahs.length,
+        totalVerses: surahs.reduce((sum, s) => sum + s.verses.length, 0)
+      });
+      
+    } catch (error) {
+      secureLogger.error('Error loading Page content', error);
+      Alert.alert('Error', 'Unable to load Page content. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Simple and reliable scrolling after surah loads
+  useEffect(() => {
+    if (!isLoading && surah && flashListRef.current) {
+      const targetVerse = highlightBookmark?.verse || initialVerse;
+      if (targetVerse > 1) {
+        // Use a more reliable timeout approach
+        setTimeout(() => {
+          scrollToVerse(targetVerse);
+        }, 800); // Increased delay for FlashList to fully render
+      }
+    }
+  }, [isLoading, surah, highlightBookmark, initialVerse]);
+
   const scrollToVerse = (verseNumber: number) => {
     try {
-      if (!flatListRef.current || !surah) {
-        secureLogger.warn('FlatList ref or surah not available for verse scrolling');
+      if (!flashListRef.current || !surah) {
+        secureLogger.warn('FlashList ref or surah not available');
         return;
       }
 
       const verseIndex = surah.verses.findIndex(v => v.verseNumber === verseNumber);
       if (verseIndex >= 0) {
-        flatListRef.current.scrollToIndex({ 
-          index: verseIndex, 
+        secureLogger.info('Scrolling to verse', { verseNumber, verseIndex });
+        
+        // FlashList has better scrollToIndex support
+        flashListRef.current.scrollToIndex({
+          index: verseIndex,
           animated: true,
-          viewPosition: 0.3 // Show verse at 30% from top for better visibility
         });
-
-        secureLogger.info('Scrolled to verse successfully', { 
-          verseNumber, 
-          verseIndex 
-        });
+        
+        secureLogger.info('Successfully scrolled to verse', { verseNumber, verseIndex });
       } else {
-        secureLogger.warn('Verse not found for scrolling', { verseNumber });
+        secureLogger.warn('Verse not found', { verseNumber, totalVerses: surah.verses.length });
       }
     } catch (error) {
-      secureLogger.error('Error scrolling to verse', { 
-        error: error.message || String(error),
-        verseNumber 
-      });
+      secureLogger.error('Error scrolling to verse', { error: error instanceof Error ? error.message : String(error), verseNumber });
     }
   };
 
   // Handle viewport changes to track which verses are visible
-  const onViewableItemsChanged = useCallback((info: { viewableItems: ViewToken[] }) => {
-    const newVisibleVerses = new Set<number>();
-    
-    info.viewableItems.forEach(item => {
-      if (item.isViewable && item.item) {
-        newVisibleVerses.add(item.item.verseNumber);
-      }
-    });
-    
-    setVisibleVerses(newVisibleVerses);
-    
-    secureLogger.info('Viewable verses changed', { 
-      visibleVerses: Array.from(newVisibleVerses),
-      count: newVisibleVerses.size 
-    });
+  const onViewableItemsChanged = useCallback(() => {
+    // Simplified - FlashList handles viewability better
   }, []);
 
   const viewabilityConfig = {
-    itemVisiblePercentThreshold: 50, // Consider item visible when 50% is shown
-    minimumViewTime: 500, // Item must be visible for at least 500ms
+    itemVisiblePercentThreshold: 50,
+    minimumViewTime: 500,
   };
-
-  const getItemLayout = useCallback((data: any, index: number) => {
-    const ESTIMATED_ITEM_HEIGHT = 150; // Estimated height per verse
-    return {
-      length: ESTIMATED_ITEM_HEIGHT,
-      offset: ESTIMATED_ITEM_HEIGHT * index,
-      index,
-    };
-  }, []);
 
   const handleVersePress = async (verse: QuranVerse) => {
     try {
@@ -656,7 +863,7 @@ const QuranReader: React.FC<QuranReaderProps> = ({
   const isVerseBookmarked = (verse: QuranVerse) => {
     if (!verse || !surah) return false;
     return bookmarks.some(bookmark => 
-      bookmark.surah === surah.id && bookmark.verse === verse.verseNumber
+      bookmark.surahNumber === surah.id && bookmark.verseNumber === verse.verseNumber
     );
   };
 
@@ -665,11 +872,16 @@ const QuranReader: React.FC<QuranReaderProps> = ({
                               audioState.audioType === 'quran' && 
                               audioState.isPlaying;
     
+    const isHighlighted = highlightedVerse && 
+                         highlightedVerse.surah === (surah?.id || 1) && 
+                         highlightedVerse.verse === verse.verseNumber;
+    
     return (
       <VerseComponent
         verse={verse}
         surahNumber={surah?.id || 1}
         isBookmarked={isVerseBookmarked(verse)}
+        isHighlighted={isHighlighted || false}
         showTranslation={modeSettings.showTranslation}
         showTransliteration={modeSettings.showTransliteration}
         showWordByWord={modeSettings.showWordByWord}
@@ -680,7 +892,7 @@ const QuranReader: React.FC<QuranReaderProps> = ({
         onBookmarkToggle={handleBookmarkToggle}
         onPlayAudio={handlePlayAudio}
         onWordPress={modeSettings.showWordByWord ? handleWordPress : undefined}
-        isVisible={visibleVerses.has(verse.verseNumber)}
+        isVisible={true}
         onVisibilityChange={() => {}}
         audioState={audioState}
         isCurrentlyPlaying={isCurrentlyPlaying}
@@ -688,32 +900,52 @@ const QuranReader: React.FC<QuranReaderProps> = ({
     );
   };
 
-  const renderHeader = () => (
-    <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-      <TouchableOpacity
-        onPress={onClose}
-        {...getButtonA11yProps('Close reader', 'Close Quran reader', false)}
-      >
-        <Ionicons name="arrow-back" size={24} color={colors.text.primary} />
-      </TouchableOpacity>
-      
-      <View style={styles.headerCenter}>
-        <Text style={[styles.surahTitle, { color: colors.text.primary }]}>
-          {surah?.englishName}
-        </Text>
-        <Text style={[styles.surahSubtitle, { color: colors.text.secondary }]}>
-          {surah?.name} • {surah?.totalVerses} verses • {surah?.revelationType}
-        </Text>
+  const renderHeader = () => {
+    let title = '';
+    let subtitle = '';
+    
+    if (mode === 'juz' && juzData) {
+      title = `Juz ${juzData.juzNumber} - ${juzData.name}`;
+      subtitle = `${juzData.arabicName} • Surah ${juzData.startSurah}:${juzData.startVerse} - ${juzData.endSurah}:${juzData.endVerse}`;
+    } else if (mode === 'page' && pageData) {
+      title = `Page ${pageData.pageNumber}`;
+      subtitle = `${pageData.description} • Juz ${pageData.juzNumber}`;
+    } else if (surah) {
+      title = surah.englishName;
+      subtitle = `${surah.name} • ${surah.totalVerses} verses • ${surah.revelationType}`;
+    } else if (multiSurahContent.length > 0) {
+      const totalVerses = multiSurahContent.reduce((sum, s) => sum + s.verses.length, 0);
+      title = `${multiSurahContent.length} Surahs`;
+      subtitle = `${totalVerses} verses`;
+    }
+    
+    return (
+      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+        <TouchableOpacity
+          onPress={onClose}
+          {...getButtonA11yProps('Close reader', 'Close Quran reader', false)}
+        >
+          <Ionicons name="arrow-back" size={24} color={colors.text.primary} />
+        </TouchableOpacity>
+        
+        <View style={styles.headerCenter}>
+          <Text style={[styles.surahTitle, { color: colors.text.primary }]}>
+            {title}
+          </Text>
+          <Text style={[styles.surahSubtitle, { color: colors.text.secondary }]}>
+            {subtitle}
+          </Text>
+        </View>
+        
+        <TouchableOpacity
+          onPress={() => setShowSettings(true)}
+          {...getButtonA11yProps('Reading settings', 'Open reading preferences', false)}
+        >
+          <Ionicons name="settings" size={24} color={colors.text.secondary} />
+        </TouchableOpacity>
       </View>
-      
-      <TouchableOpacity
-        onPress={() => setShowSettings(true)}
-        {...getButtonA11yProps('Reading settings', 'Open reading preferences', false)}
-      >
-        <Ionicons name="settings" size={24} color={colors.text.secondary} />
-      </TouchableOpacity>
-    </View>
-  );
+    );
+  };
 
   const renderModeIndicator = () => {
     if (mode === 'normal') return null;
@@ -722,8 +954,10 @@ const QuranReader: React.FC<QuranReaderProps> = ({
       reciter: { icon: 'book', label: 'Reciter Mode', color: colors.primary },
       seeker: { icon: 'school', label: 'Knowledge Seeker', color: colors.secondary },
       memorizer: { icon: 'fitness', label: 'Memorizer Mode', color: colors.accent },
-      auditory: { icon: 'headset', label: 'Audio Mode', color: colors.islamic.blue },
+      auditory: { icon: 'headset', label: 'Audio Mode', color: colors.secondary },
       beginner: { icon: 'star', label: 'Beginner Mode', color: colors.islamic.green },
+      juz: { icon: 'layers', label: 'Juz Mode', color: colors.islamic.gold },
+      page: { icon: 'document', label: 'Page Mode', color: colors.primary },
     };
     
     const config = modeConfig[mode];
@@ -736,8 +970,8 @@ const QuranReader: React.FC<QuranReaderProps> = ({
     );
   };
 
-  const renderBismillah = () => {
-    if (!surah?.bismillahPre) return null;
+  const renderBismillah = (showBismillah: boolean = true) => {
+    if (!showBismillah) return null;
     
     return (
       <View style={[styles.bismillahContainer, { backgroundColor: colors.surface }]}>
@@ -751,6 +985,112 @@ const QuranReader: React.FC<QuranReaderProps> = ({
           In the name of Allah, the Most Gracious, the Most Merciful
         </Text>
       </View>
+    );
+  };
+
+  // Render single surah content
+  const renderSingleSurahContent = () => {
+    if (!surah) return null;
+    
+    return (
+      <View style={{ flex: 1 }}>
+        {surah.bismillahPre && renderBismillah(true)}
+        <FlashList
+          ref={flashListRef}
+          data={surah.verses}
+          renderItem={renderVerse}
+          keyExtractor={(item) => item.id.toString()}
+          estimatedItemSize={180} // FlashList uses estimatedItemSize instead of getItemLayout
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.flashListContent}
+        />
+      </View>
+    );
+  };
+
+  // Render multi-surah content (for juz/page modes)
+  const renderMultiSurahContent = () => {
+    if (multiSurahContent.length === 0) return null;
+    
+    // Create a flat list of all verses with surah separators
+    const allContent: Array<{ type: 'surah-header' | 'verse', data: any, surahId: number }> = [];
+    
+    multiSurahContent.forEach((currentSurah, surahIndex) => {
+      // Add surah header
+      allContent.push({
+        type: 'surah-header',
+        data: currentSurah,
+        surahId: currentSurah.id
+      });
+      
+      // Add verses
+      currentSurah.verses.forEach(verse => {
+        allContent.push({
+          type: 'verse',
+          data: verse,
+          surahId: currentSurah.id
+        });
+      });
+    });
+    
+    const renderMultiItem = ({ item }: { item: typeof allContent[0] }) => {
+      if (item.type === 'surah-header') {
+        const surahData = item.data;
+        return (
+          <View style={[styles.surahHeader, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.surahHeaderTitle, { color: colors.text.primary }]}>
+              {surahData.englishName}
+            </Text>
+            <Text style={[styles.surahHeaderSubtitle, { color: colors.text.secondary }]}>
+              {surahData.name} • {surahData.revelationType}
+            </Text>
+            {surahData.bismillahPre && renderBismillah(true)}
+          </View>
+        );
+      } else {
+        const verse = item.data;
+        const isCurrentlyPlaying = currentPlayingVerse === verse.verseNumber && 
+                                  audioState.audioType === 'quran' && 
+                                  audioState.isPlaying;
+        
+        const isHighlighted = highlightedVerse && 
+                             highlightedVerse.surah === item.surahId && 
+                             highlightedVerse.verse === verse.verseNumber;
+        
+        return (
+          <VerseComponent
+            verse={verse}
+            surahNumber={item.surahId}
+            isBookmarked={isVerseBookmarked(verse)}
+            isHighlighted={isHighlighted || false}
+            showTranslation={modeSettings.showTranslation}
+            showTransliteration={modeSettings.showTransliteration}
+            showWordByWord={modeSettings.showWordByWord}
+            arabicFontSize={modeSettings.arabicFontSize}
+            translationFontSize={settings.translationFontSize}
+            readingMode={modeSettings.readingMode}
+            onVersePress={handleVersePress}
+            onBookmarkToggle={handleBookmarkToggle}
+            onPlayAudio={handlePlayAudio}
+            onWordPress={modeSettings.showWordByWord ? handleWordPress : undefined}
+            isVisible={true}
+            onVisibilityChange={() => {}}
+            audioState={audioState}
+            isCurrentlyPlaying={isCurrentlyPlaying}
+          />
+        );
+      }
+    };
+    
+    return (
+      <FlashList
+        data={allContent}
+        renderItem={renderMultiItem}
+        keyExtractor={(item, index) => `${item.type}-${item.surahId}-${index}`}
+        estimatedItemSize={180}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.flashListContent}
+      />
     );
   };
 
@@ -775,35 +1115,13 @@ const QuranReader: React.FC<QuranReaderProps> = ({
             </Text>
           </View>
         ) : surah ? (
-          <FlatList
-            ref={flatListRef}
-            data={surah.verses}
-            renderItem={renderVerse}
-            keyExtractor={(item) => item.id.toString()}
-            ListHeaderComponent={renderBismillah}
-            onViewableItemsChanged={onViewableItemsChanged}
-            viewabilityConfig={viewabilityConfig}
-            getItemLayout={getItemLayout}
-            removeClippedSubviews={true} // Enable lazy loading
-            maxToRenderPerBatch={10} // Render 10 items per batch
-            updateCellsBatchingPeriod={50} // Update every 50ms
-            initialNumToRender={5} // Initially render 5 items
-            windowSize={10} // Keep 10 screens worth of items in memory
-            contentContainerStyle={styles.flatListContent}
-            showsVerticalScrollIndicator={false}
-            onScrollToIndexFailed={(info) => {
-              secureLogger.warn('Scroll to index failed', info);
-              // Fallback: try to scroll to offset
-              if (flatListRef.current) {
-                const offset = info.index * 150; // Estimated item height
-                flatListRef.current.scrollToOffset({ offset, animated: true });
-              }
-            }}
-          />
+          renderSingleSurahContent()
+        ) : multiSurahContent.length > 0 ? (
+          renderMultiSurahContent()
         ) : (
           <View style={styles.errorContainer}>
             <Text style={[styles.errorText, { color: colors.text.secondary }]}>
-              Unable to load Surah. Please try again.
+              Unable to load content. Please try again.
             </Text>
           </View>
         )}
@@ -851,7 +1169,9 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
   },
   headerCenter: {
@@ -887,21 +1207,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loadingText: {
-    marginTop: 12,
+    marginTop: 16,
     fontSize: 16,
   },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 32,
   },
   errorText: {
     fontSize: 16,
     textAlign: 'center',
   },
-  flatListContent: {
-    padding: 16,
-  },
+      flashListContent: {
+      padding: 16,
+    },
   bismillahContainer: {
     padding: 20,
     marginBottom: 20,
@@ -989,6 +1310,9 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -999,12 +1323,16 @@ const styles = StyleSheet.create({
     borderBottomColor: '#E5E7EB',
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 16,
   },
   modalContent: {
-    flex: 1,
-    padding: 16,
+    borderRadius: 16,
+    padding: 20,
+    width: '90%',
+    maxHeight: '80%',
   },
   tafsirText: {
     fontSize: 16,
@@ -1051,6 +1379,36 @@ const styles = StyleSheet.create({
     marginLeft: 12,
     fontSize: 14,
     fontWeight: '500',
+  },
+  surahHeader: {
+    padding: 16,
+    marginVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  surahHeaderTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+  },
+  surahHeaderSubtitle: {
+    fontSize: 14,
+    marginTop: 4,
+    fontWeight: '400',
+  },
+  bookmarkIndicator: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bookmarkIndicatorText: {
+    fontSize: 10,
+    fontWeight: '600',
   },
 });
 
