@@ -486,8 +486,12 @@ export interface QuranMemorizationProgress {
   status: 'learning' | 'reviewing' | 'mastered';
   accuracy: number; // 0-100
   lastReviewed: string;
-  timesReviewed: number;
-  mistakes: string[]; // Common mistakes made
+  nextReviewDate: string;
+  timesReviewed?: number;
+  attempts: number;
+  mistakes?: string[]; // Common mistakes made
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface QuranReadingPlan {
@@ -662,6 +666,7 @@ export interface QuranContextType extends QuranState {
   // Memorization
   startMemorization: (surah: number, verse: number) => Promise<void>;
   recordMemorizationAttempt: (surah: number, verse: number, accuracy: number, mistakes: string[]) => Promise<void>;
+  updateMemorizationProgress: (surah: number, verse: number, status: 'learning' | 'reviewing' | 'mastered') => Promise<void>;
   getMemorizationStats: () => any;
   
   // Audio

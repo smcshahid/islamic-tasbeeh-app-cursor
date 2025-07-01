@@ -206,7 +206,7 @@ const QuranDashboard: React.FC = () => {
         setReaderMode('seeker');
         setSelectedSurah(lastReadPosition?.surah || 1);
         setSelectedVerse(lastReadPosition?.verse || 1);
-        setShowAdvancedSearch(true);
+        setShowReader(true);
         setShowPersonaModal(false);
       },
       badge: 'Popular',

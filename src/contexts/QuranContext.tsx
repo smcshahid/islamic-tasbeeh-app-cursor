@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Audio } from 'expo-audio';
 import * as Notifications from 'expo-notifications';
 import { 
   QuranContextType, 
@@ -20,7 +19,7 @@ import {
 import { secureLogger } from '../utils/secureLogger';
 import { storage } from '../utils/storage';
 import { hapticFeedback } from '../utils/haptics';
-import { quranApi, AVAILABLE_TRANSLATIONS, AVAILABLE_RECITERS, SURAH_METADATA } from '../utils/quranApi';
+import { quranApi, getSurahName, AVAILABLE_TRANSLATIONS, AVAILABLE_RECITERS, SURAH_METADATA } from '../utils/quranApi';
 
 // Initial state
 const initialState: QuranState = {
@@ -434,16 +433,23 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const getCurrentReadingProgress = useCallback((surahNumber: number) => {
     // Get the current reading progress for a specific surah
+    const surahMetadata = SURAH_METADATA.find(s => s.id === surahNumber);
+    const totalVerses = surahMetadata?.totalVerses || 1;
+    
     const sessions = state.readingSessions.filter(s => s.startSurah === surahNumber);
-    if (sessions.length === 0) return { lastReadVerse: 0, completionPercentage: 0 };
+    if (sessions.length === 0) {
+      return { 
+        lastReadVerse: 0, 
+        completionPercentage: 0, 
+        totalVerses 
+      };
+    }
     
     const latestSession = sessions.sort((a, b) => 
       new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
     )[0];
     
     const lastReadVerse = latestSession.endVerse || latestSession.startVerse || 0;
-    const surahMetadata = SURAH_METADATA.find(s => s.id === surahNumber);
-    const totalVerses = surahMetadata?.totalVerses || 1;
     const completionPercentage = (lastReadVerse / totalVerses) * 100;
     
     return { 
@@ -703,12 +709,54 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Implementation for recording memorization attempts
   }, []);
 
+  const updateMemorizationProgress = useCallback(async (
+    surah: number, 
+    verse: number, 
+    status: 'learning' | 'reviewing' | 'mastered'
+  ) => {
+    try {
+      const progressUpdate: QuranMemorizationProgress = {
+        id: `${surah}-${verse}`,
+        surahNumber: surah,
+        verseNumber: verse,
+        status,
+        lastReviewed: new Date().toISOString(),
+        nextReviewDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // Next day
+        accuracy: 100, // Default to 100% for manual updates
+        attempts: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      
+      dispatch({ type: 'UPDATE_MEMORIZATION_PROGRESS', payload: progressUpdate });
+      await saveToStorage(STORAGE_KEYS.MEMORIZATION_PROGRESS, [
+        ...state.memorationProgress.filter(p => !(p.surahNumber === surah && p.verseNumber === verse)),
+        progressUpdate
+      ]);
+      
+      hapticFeedback.success();
+      secureLogger.info('Memorization progress updated', { surah, verse, status });
+    } catch (error) {
+      secureLogger.error('Error updating memorization progress', error);
+      throw error;
+    }
+  }, [state.memorationProgress, saveToStorage]);
+
   const getMemorizationStats = useCallback(() => {
+    const totalVerses = state.memorationProgress.length;
+    const totalMastered = state.memorationProgress.filter(p => p.status === 'mastered').length;
+    const totalLearning = state.memorationProgress.filter(p => p.status === 'learning').length;
+    const totalReviewing = state.memorationProgress.filter(p => p.status === 'reviewing').length;
+    
     return {
-      totalVerses: state.memorationProgress.length,
-      mastered: state.memorationProgress.filter(p => p.status === 'mastered').length,
-      learning: state.memorationProgress.filter(p => p.status === 'learning').length,
-      reviewing: state.memorationProgress.filter(p => p.status === 'reviewing').length,
+      totalVerses,
+      totalMastered,
+      totalLearning,
+      totalReviewing,
+      // Legacy property names for backward compatibility
+      mastered: totalMastered,
+      learning: totalLearning,
+      reviewing: totalReviewing,
     };
   }, [state.memorationProgress]);
 
@@ -765,20 +813,115 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     verse: number, 
     wordIndex: number
   ): Promise<QuranWordAnalysis> => {
-    // Implementation for word analysis
-    return {
-      text: '',
-      translation: '',
-      transliteration: '',
-      root: '',
-      grammar: '',
-      morphology: '',
-    };
+    try {
+      secureLogger.info('Getting word analysis', { surah, verse, wordIndex });
+      
+      // Get word-by-word analysis from API
+      const wordsAnalysis = await quranApi.getWordByWordAnalysis(surah, verse);
+      
+      if (!wordsAnalysis || wordsAnalysis.length === 0) {
+        secureLogger.warn('No word analysis data returned from API');
+        return {
+          text: '',
+          translation: 'Analysis not available',
+          transliteration: '',
+          root: '',
+          grammar: '',
+          morphology: '',
+        };
+      }
+      
+      // Find the specific word by index
+      const wordData = wordsAnalysis[wordIndex];
+      if (!wordData) {
+        secureLogger.warn('Word not found at index', { wordIndex, totalWords: wordsAnalysis.length });
+        return {
+          text: '',
+          translation: 'Word not found',
+          transliteration: '',
+          root: '',
+          grammar: '',
+          morphology: '',
+        };
+      }
+      
+      // Transform API data to QuranWordAnalysis format
+      const analysis: QuranWordAnalysis = {
+        text: wordData.arabicText || wordData.text || '',
+        translation: wordData.translation || '',
+        transliteration: wordData.transliteration || '',
+        root: wordData.root || '',
+        grammar: wordData.grammar || '',
+        morphology: wordData.morphology || '',
+      };
+      
+      secureLogger.info('Word analysis completed successfully', { 
+        surah, 
+        verse, 
+        wordIndex,
+        hasTranslation: !!analysis.translation 
+      });
+      
+      return analysis;
+    } catch (error) {
+      secureLogger.error('Error getting word analysis', { 
+        error: error instanceof Error ? error.message : String(error),
+        surah, 
+        verse, 
+        wordIndex 
+      });
+      
+      return {
+        text: '',
+        translation: 'Error loading analysis',
+        transliteration: '',
+        root: '',
+        grammar: '',
+        morphology: '',
+      };
+    }
   }, []);
 
   const getTafsir = useCallback(async (surah: number, verse: number, tafsirId?: string) => {
-    // Implementation for getting tafsir
-    return '';
+    try {
+      secureLogger.info('Getting tafsir', { surah, verse, tafsirId });
+      
+      // Use default tafsir if none specified
+      const tafsirIdentifier = tafsirId || 'en_jalalayn';
+      
+      // Get tafsir from API
+      const tafsirText = await quranApi.getTafsir(surah, verse, tafsirIdentifier);
+      
+      if (!tafsirText || tafsirText.trim() === '') {
+        secureLogger.warn('No tafsir text returned from API');
+        
+        // Provide a meaningful fallback
+        const fallbackTafsir = `Tafsir for verse ${surah}:${verse} is not available in the selected commentary. ` +
+                              `This verse is from Surah ${getSurahName(surah)}. ` +
+                              `Please try a different tafsir source or check your internet connection.`;
+        
+        return fallbackTafsir;
+      }
+      
+      secureLogger.info('Tafsir retrieved successfully', { 
+        surah, 
+        verse, 
+        tafsirId: tafsirIdentifier,
+        textLength: tafsirText.length 
+      });
+      
+      return tafsirText;
+    } catch (error) {
+      secureLogger.error('Error getting tafsir', { 
+        error: error instanceof Error ? error.message : String(error),
+        surah, 
+        verse, 
+        tafsirId 
+      });
+      
+      // Provide a helpful error message
+      return `Unable to load tafsir for verse ${surah}:${verse}. Please check your internet connection and try again.`;
+    }
   }, []);
 
   const getReadingStats = useCallback(() => {
@@ -820,6 +963,7 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Memorization
     startMemorization,
     recordMemorizationAttempt,
+    updateMemorizationProgress,
     getMemorizationStats,
     
     // Audio
