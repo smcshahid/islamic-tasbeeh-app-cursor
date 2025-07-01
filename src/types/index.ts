@@ -528,13 +528,17 @@ export interface QuranWordAnalysis {
   morphology: string;
 }
 
-export interface QuranSearchResult extends SearchResult {
+export interface QuranSearchResult {
   surahNumber: number;
   verseNumber: number;
   text: string;
-  translation: string;
+  transliteration?: string;
+  translation?: string;
+  arabicText?: string;
+  tags?: string[];
+  score: number;
   context?: string;
-  relevanceScore: number;
+  highlightedText?: string;
 }
 
 export interface QuranSettings {

@@ -604,19 +604,80 @@ export const QuranProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       includeTransliteration?: boolean;
       surahFilter?: number[];
       limit?: number;
+      translationId?: string;
     }
   ): Promise<QuranSearchResult[]> => {
     try {
-      // This would implement actual search functionality
-      // For now, return empty results
-      const results: QuranSearchResult[] = [];
-      dispatch({ type: 'SET_SEARCH_RESULTS', payload: results });
-      return results;
+      secureLogger.info('Context search initiated', { 
+        query: query.trim(), 
+        options,
+        timestamp: new Date().toISOString()
+      });
+
+      if (!query || !query.trim()) {
+        secureLogger.info('Empty search query, returning empty results');
+        dispatch({ type: 'SET_SEARCH_RESULTS', payload: [] });
+        return [];
+      }
+
+      // Use the enhanced API search
+      const translationId = options?.translationId || state.settings.defaultTranslation || 'en_sahih';
+      const limit = options?.limit || 20;
+      
+      const apiResults = await quranApi.searchQuran(query.trim(), translationId, limit);
+      
+      // Transform API results to QuranSearchResult format
+      const transformedResults: QuranSearchResult[] = apiResults.map((result, index) => ({
+        id: `search_${result.surahNumber}_${result.verseNumber}_${index}`,
+        title: `${result.surahNumber}:${result.verseNumber}`,
+        subtitle: result.translation || '',
+        category: 'Quran Verse',
+        icon: 'book',
+        keywords: result.tags || [],
+        surahNumber: result.surahNumber,
+        verseNumber: result.verseNumber,
+        text: result.arabicText || '',
+        translation: result.translation || '',
+        context: result.context,
+        relevanceScore: result.score || 0.5,
+        arabicText: result.arabicText || '',
+        score: result.score || 0.5,
+        tags: result.tags || []
+      }));
+
+      // Apply filters if provided
+      let filteredResults = transformedResults;
+      
+      if (options?.surahFilter && options.surahFilter.length > 0) {
+        filteredResults = filteredResults.filter(result => 
+          options.surahFilter!.includes(result.surahNumber)
+        );
+      }
+
+      // Update context state
+      dispatch({ type: 'SET_SEARCH_RESULTS', payload: filteredResults });
+      
+      secureLogger.info('Context search completed successfully', { 
+        query: query.trim(),
+        resultsCount: filteredResults.length,
+        translationId,
+        averageScore: filteredResults.length > 0 
+          ? filteredResults.reduce((sum, r) => sum + r.score, 0) / filteredResults.length
+          : 0
+      });
+
+      return filteredResults;
     } catch (error) {
-      secureLogger.error('Error searching Quran', error);
+      secureLogger.error('Error in context search function', {
+        error: error instanceof Error ? error.message : String(error),
+        query: query?.trim(),
+        options
+      });
+      
+      dispatch({ type: 'SET_SEARCH_RESULTS', payload: [] });
       return [];
     }
-  }, []);
+  }, [state.settings.defaultTranslation]);
 
   const clearSearch = useCallback(() => {
     dispatch({ type: 'CLEAR_SEARCH' });

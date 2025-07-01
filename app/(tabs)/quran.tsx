@@ -501,9 +501,20 @@ const QuranDashboard: React.FC = () => {
         visible={showAdvancedSearch}
         onClose={() => setShowAdvancedSearch(false)}
         onVerseSelect={(surah, verse) => {
+          secureLogger.info('Verse selected from enhanced search', { 
+            surah, 
+            verse,
+            searchSource: 'advanced_search',
+            timestamp: new Date().toISOString()
+          });
           setSelectedSurah(surah);
           setSelectedVerse(verse);
-          setReaderMode('seeker');
+          setReaderMode('seeker'); // Set to seeker mode for search results
+          // Clear navigation data
+          setSelectedJuzData(null);
+          setSelectedPageData(null);
+          // Highlight the selected verse from search
+          setHighlightBookmark({ surah, verse });
           setShowAdvancedSearch(false);
           setShowReader(true);
         }}
