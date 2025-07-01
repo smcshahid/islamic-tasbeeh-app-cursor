@@ -71,8 +71,6 @@ interface VerseComponentProps {
   onBookmarkToggle: (verse: QuranVerse) => void;
   onPlayAudio: (verse: QuranVerse) => void;
   onWordPress?: (word: string, index: number) => void;
-  isVisible: boolean;
-  onVisibilityChange: (verse: QuranVerse, isVisible: boolean) => void;
   audioState: AudioState;
   isCurrentlyPlaying: boolean;
 }
@@ -92,24 +90,10 @@ const VerseComponent: React.FC<VerseComponentProps> = ({
   onBookmarkToggle,
   onPlayAudio,
   onWordPress,
-  isVisible,
-  onVisibilityChange,
   audioState,
   isCurrentlyPlaying,
 }) => {
   const { colors } = useAppTheme();
-  const { markAsRead } = useQuranContext();
-  const [hasBeenRead, setHasBeenRead] = useState(false);
-  const [bookmarkPulse, setBookmarkPulse] = useState(false);
-  const visibilityTimerRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // Handle bookmark pulse effect
-  useEffect(() => {
-    if (isBookmarked) {
-      setBookmarkPulse(true);
-      setTimeout(() => setBookmarkPulse(false), 300);
-    }
-  }, [isBookmarked]);
   
   // Enhanced highlight effect
   useEffect(() => {
@@ -118,40 +102,6 @@ const VerseComponent: React.FC<VerseComponentProps> = ({
       hapticFeedback.light();
     }
   }, [isHighlighted]);
-
-  // Handle visibility changes and reading timer
-  useEffect(() => {
-    if (isVisible && !hasBeenRead) {
-      // Clear any existing timer
-      if (visibilityTimerRef.current) {
-        clearTimeout(visibilityTimerRef.current);
-      }
-      
-      // Start new timer
-      visibilityTimerRef.current = setTimeout(() => {
-        setHasBeenRead(true);
-        markAsRead(surahNumber, verse.verseNumber);
-        secureLogger.info('Verse marked as read after being visible', { 
-          surah: surahNumber, 
-          verse: verse.verseNumber 
-        });
-      }, 3000); // 3 seconds of visibility required
-      
-    } else if (!isVisible && visibilityTimerRef.current) {
-      // Clear timer if verse becomes invisible
-      clearTimeout(visibilityTimerRef.current);
-      visibilityTimerRef.current = null;
-    }
-  }, [isVisible, hasBeenRead, surahNumber, verse.verseNumber]);
-
-  // Cleanup timer on unmount
-  useEffect(() => {
-    return () => {
-      if (visibilityTimerRef.current) {
-        clearTimeout(visibilityTimerRef.current);
-      }
-    };
-  }, []);
 
   // Show audio progress for currently playing verse
   const renderAudioProgress = () => {
@@ -253,7 +203,6 @@ const VerseComponent: React.FC<VerseComponentProps> = ({
           borderWidth: isHighlighted ? 3 : isCurrentlyPlaying ? 2 : 1,
           marginBottom: readingMode === 'focus' ? 24 : 16,
           padding: readingMode === 'focus' ? 24 : 16,
-          opacity: hasBeenRead ? 1 : 0.95,
           // Enhanced shadow for highlighted verses
           shadowColor: isHighlighted ? colors.accent : colors.shadow,
           shadowOffset: isHighlighted ? { width: 0, height: 4 } : { width: 0, height: 2 },
@@ -273,26 +222,12 @@ const VerseComponent: React.FC<VerseComponentProps> = ({
         <View style={[
           styles.verseNumber, 
           { 
-            backgroundColor: hasBeenRead 
-              ? colors.primary + '30' 
-              : isVisible
-              ? colors.primary + '25'
-              : colors.primary + '20' 
+            backgroundColor: colors.primary + '20'
           }
         ]}>
           <Text style={[styles.verseNumberText, { color: colors.primary }]}>
             {verse.verseNumber}
           </Text>
-          {hasBeenRead && (
-            <View style={styles.readIndicator}>
-              <Ionicons name="checkmark-circle" size={12} color={colors.primary} />
-            </View>
-          )}
-          {isVisible && !hasBeenRead && (
-            <View style={styles.viewingIndicator}>
-              <Ionicons name="eye" size={10} color={colors.secondary} />
-            </View>
-          )}
         </View>
         
         <View style={styles.verseActions}>
@@ -328,7 +263,6 @@ const VerseComponent: React.FC<VerseComponentProps> = ({
                   : 'transparent',
                 borderWidth: isBookmarked ? 1 : 0,
                 borderColor: isBookmarked ? colors.accent : 'transparent',
-                transform: bookmarkPulse ? [{ scale: 1.1 }] : [{ scale: 1 }],
               }
             ]}
             onPress={() => onBookmarkToggle(verse)}
@@ -343,13 +277,6 @@ const VerseComponent: React.FC<VerseComponentProps> = ({
               size={20} 
               color={isBookmarked ? colors.accent : colors.text.secondary} 
             />
-            {isBookmarked && (
-              <View style={[styles.bookmarkIndicator, { backgroundColor: colors.accent }]}>
-                <Text style={[styles.bookmarkIndicatorText, { color: colors.text.onAccent }]}>
-                  ●
-                </Text>
-              </View>
-            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -445,6 +372,12 @@ const QuranReader: React.FC<QuranReaderProps> = ({
   // Simplified bookmark highlighting
   const [highlightedVerse, setHighlightedVerse] = useState<{ surah: number; verse: number } | null>(null);
   
+  // Local bookmark state for immediate UI feedback
+  const [localBookmarkChanges, setLocalBookmarkChanges] = useState<Map<string, boolean>>(new Map());
+  
+  // Force re-render trigger for bookmark changes
+  const [bookmarkUpdateTrigger, setBookmarkUpdateTrigger] = useState(0);
+  
   const flashListRef = useRef<FlashList<QuranVerse>>(null);
 
   // Listen to audio state changes
@@ -466,6 +399,12 @@ const QuranReader: React.FC<QuranReaderProps> = ({
     
     return unsubscribe;
   }, []);
+
+  // Clear local bookmark changes when bookmarks from context change
+  useEffect(() => {
+    // Clear local state when context bookmarks update (to prevent stale state)
+    setLocalBookmarkChanges(new Map());
+  }, [bookmarks]);
 
   const getModeSettings = useCallback(() => {
     switch (mode) {
@@ -890,29 +829,76 @@ const QuranReader: React.FC<QuranReaderProps> = ({
     }
   };
 
-  const handleBookmarkToggle = async (verse: QuranVerse) => {
+  const handleBookmarkToggle = async (verse: QuranVerse, targetSurahId?: number) => {
+    // Determine the surah ID (could come from parameter for multi-surah mode or from current surah)
+    const currentSurahId = targetSurahId || surah?.id;
+    
     try {
-      if (!verse || !surah) {
+      
+      if (!verse || !currentSurahId) {
         secureLogger.warn('Invalid verse or surah data for bookmark toggle');
         return;
       }
 
       hapticFeedback.success();
       
+      const verseKey = `${currentSurahId}-${verse.verseNumber}`;
+      const currentlyBookmarked = isVerseBookmarked(verse, currentSurahId);
+      const newBookmarkState = !currentlyBookmarked;
+      
+      // Immediately update local state for instant UI feedback
+      setLocalBookmarkChanges(prev => {
+        const newMap = new Map(prev);
+        newMap.set(verseKey, newBookmarkState);
+        return newMap;
+      });
+      
+      // Force re-render to show bookmark change immediately
+      setBookmarkUpdateTrigger(prev => prev + 1);
+      
+      secureLogger.info('Local bookmark state updated immediately', { 
+        surah: currentSurahId, 
+        verse: verse.verseNumber, 
+        newState: newBookmarkState 
+      });
+      
+      // Now perform the actual bookmark operation
       const existingBookmark = bookmarks.find(
-        b => b.surahNumber === surah.id && b.verseNumber === verse.verseNumber
+        b => b.surahNumber === currentSurahId && b.verseNumber === verse.verseNumber
       );
       
       if (existingBookmark) {
         await removeBookmark(existingBookmark.id);
-        secureLogger.info('Bookmark removed', { surah: surah.id, verse: verse.verseNumber });
+        secureLogger.info('Bookmark removed from context', { surah: currentSurahId, verse: verse.verseNumber });
       } else {
-        await addBookmark(surah.id, verse.verseNumber, `${getSurahName(surah.id)} ${verse.verseNumber}`);
-        secureLogger.info('Bookmark added', { surah: surah.id, verse: verse.verseNumber });
+        await addBookmark(currentSurahId, verse.verseNumber, `${getSurahName(currentSurahId)} ${verse.verseNumber}`);
+        secureLogger.info('Bookmark added to context', { surah: currentSurahId, verse: verse.verseNumber });
       }
+      
+      // Clear local state after context operation completes successfully
+      // The context should now have the updated state
+      setTimeout(() => {
+        setLocalBookmarkChanges(prev => {
+          const newMap = new Map(prev);
+          newMap.delete(verseKey);
+          return newMap;
+        });
+      }, 500); // Small delay to ensure context has updated
+      
     } catch (error) {
       secureLogger.error('Error toggling bookmark', error);
-      secureLogger.info('Bookmark operation failed, continuing without interruption');
+      
+      // Revert local state on error
+      if (currentSurahId) {
+        const verseKey = `${currentSurahId}-${verse.verseNumber}`;
+        setLocalBookmarkChanges(prev => {
+          const newMap = new Map(prev);
+          newMap.delete(verseKey); // Remove the optimistic update
+          return newMap;
+        });
+      }
+      
+      secureLogger.info('Bookmark operation failed, reverted local state');
     }
   };
 
@@ -959,14 +945,28 @@ const QuranReader: React.FC<QuranReaderProps> = ({
     }
   };
 
-  const isVerseBookmarked = (verse: QuranVerse) => {
-    if (!verse || !surah) return false;
+  const isVerseBookmarked = (verse: QuranVerse, surahId?: number) => {
+    if (!verse) return false;
+    
+    // Determine the surah ID (could come from parameter for multi-surah mode or from current surah)
+    const currentSurahId = surahId || surah?.id;
+    if (!currentSurahId) return false;
+    
+    // Create a unique key for this verse
+    const verseKey = `${currentSurahId}-${verse.verseNumber}`;
+    
+    // Check local bookmark changes first (for immediate UI feedback)
+    if (localBookmarkChanges.has(verseKey)) {
+      return localBookmarkChanges.get(verseKey)!;
+    }
+    
+    // Fallback to context bookmarks
     return bookmarks.some(bookmark => 
-      bookmark.surahNumber === surah.id && bookmark.verseNumber === verse.verseNumber
+      bookmark.surahNumber === currentSurahId && bookmark.verseNumber === verse.verseNumber
     );
   };
 
-  const renderVerse = ({ item: verse, index }: { item: QuranVerse; index: number }) => {
+  const renderVerse = useCallback(({ item: verse, index }: { item: QuranVerse; index: number }) => {
     const isCurrentlyPlaying = currentPlayingVerse === verse.verseNumber && 
                               audioState.audioType === 'quran' && 
                               audioState.isPlaying;
@@ -979,7 +979,7 @@ const QuranReader: React.FC<QuranReaderProps> = ({
       <VerseComponent
         verse={verse}
         surahNumber={surah?.id || 1}
-        isBookmarked={isVerseBookmarked(verse)}
+        isBookmarked={isVerseBookmarked(verse, surah?.id)}
         isHighlighted={isHighlighted || false}
         showTranslation={modeSettings.showTranslation}
         showTransliteration={modeSettings.showTransliteration}
@@ -988,16 +988,27 @@ const QuranReader: React.FC<QuranReaderProps> = ({
         translationFontSize={settings.translationFontSize}
         readingMode={modeSettings.readingMode}
         onVersePress={handleVersePress}
-        onBookmarkToggle={handleBookmarkToggle}
+        onBookmarkToggle={(verse) => handleBookmarkToggle(verse, surah?.id)}
         onPlayAudio={handlePlayAudio}
         onWordPress={modeSettings.showWordByWord ? handleWordPress : undefined}
-        isVisible={true}
-        onVisibilityChange={() => {}}
         audioState={audioState}
         isCurrentlyPlaying={isCurrentlyPlaying}
       />
     );
-  };
+  }, [
+    surah?.id,
+    currentPlayingVerse,
+    audioState,
+    highlightedVerse,
+    modeSettings,
+    settings.translationFontSize,
+    handleVersePress,
+    handleBookmarkToggle,
+    handlePlayAudio,
+    handleWordPress,
+    isVerseBookmarked,
+    bookmarkUpdateTrigger, // Force re-render when bookmarks change
+  ]);
 
   const renderHeader = () => {
     let title = '';
@@ -1153,7 +1164,7 @@ const QuranReader: React.FC<QuranReaderProps> = ({
       });
     });
     
-    const renderMultiItem = ({ item }: { item: typeof allContent[0] }) => {
+    const renderMultiItem = useCallback(({ item }: { item: typeof allContent[0] }) => {
       if (item.type === 'surah-header') {
         const surahData = item.data;
         return (
@@ -1181,7 +1192,7 @@ const QuranReader: React.FC<QuranReaderProps> = ({
           <VerseComponent
             verse={verse}
             surahNumber={item.surahId}
-            isBookmarked={isVerseBookmarked(verse)}
+            isBookmarked={isVerseBookmarked(verse, item.surahId)}
             isHighlighted={isHighlighted || false}
             showTranslation={modeSettings.showTranslation}
             showTransliteration={modeSettings.showTransliteration}
@@ -1190,17 +1201,32 @@ const QuranReader: React.FC<QuranReaderProps> = ({
             translationFontSize={settings.translationFontSize}
             readingMode={modeSettings.readingMode}
             onVersePress={handleVersePress}
-            onBookmarkToggle={handleBookmarkToggle}
+            onBookmarkToggle={(verse) => handleBookmarkToggle(verse, item.surahId)}
             onPlayAudio={handlePlayAudio}
             onWordPress={modeSettings.showWordByWord ? handleWordPress : undefined}
-            isVisible={true}
-            onVisibilityChange={() => {}}
             audioState={audioState}
             isCurrentlyPlaying={isCurrentlyPlaying}
           />
         );
       }
-    };
+    }, [
+      colors.surface,
+      colors.border,
+      colors.text.primary,
+      colors.text.secondary,
+      currentPlayingVerse,
+      audioState,
+      highlightedVerse,
+      modeSettings,
+      settings.translationFontSize,
+      handleVersePress,
+      handleBookmarkToggle,
+      handlePlayAudio,
+      handleWordPress,
+      isVerseBookmarked,
+      renderBismillah,
+      bookmarkUpdateTrigger, // Force re-render when bookmarks change
+    ]);
     
     return (
       <FlashList
@@ -1485,22 +1511,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 24,
   },
-  readIndicator: {
-    position: 'absolute',
-    top: -2,
-    right: -2,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 8,
-    padding: 1,
-  },
-  viewingIndicator: {
-    position: 'absolute',
-    top: -2,
-    left: -2,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 8,
-    padding: 1,
-  },
+
   inlineAudioProgress: {
     height: 20,
     borderRadius: 10,
@@ -1543,20 +1554,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontWeight: '400',
   },
-  bookmarkIndicator: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  bookmarkIndicatorText: {
-    fontSize: 10,
-    fontWeight: '600',
-  },
+
 });
 
 export default QuranReader; 
