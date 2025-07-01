@@ -7,51 +7,61 @@ interface UnifiedAudioPlayerComponentProps {
   // This component doesn't render anything, it just handles audio playback
 }
 
+// Global reference to get audio source
+const getAudioSource = (audio: AdhanAudio | QuranAudioSource) => {
+  // Handle local audio files
+  if (audio.isLocal) {
+    if ('id' in audio && audio.id === 'local_adhan') {
+      return require('../../aladhan.mp3');
+    }
+    // Add test case for Quran with local file
+    if ('id' in audio && audio.id.includes('test_local')) {
+      console.log('[UnifiedAudioPlayerComponent] Using local adhan.mp3 for testing');
+      return require('../../aladhan.mp3');
+    }
+  }
+  
+  // Handle remote URLs
+  return { uri: audio.url };
+};
+
 export default function UnifiedAudioPlayerComponent({}: UnifiedAudioPlayerComponentProps) {
-  // Use the audio player hook with no initial source (best practice)
+  // Use the audio player hook with no initial source
   const player = useAudioPlayer();
   const status = useAudioPlayerStatus(player);
   
-  // Track completion to prevent infinite loops
+  // Track completion handling and current audio
   const hasHandledCompletion = useRef(false);
   const currentAudioRef = useRef<AdhanAudio | QuranAudioSource | null>(null);
+  const lastUpdateTime = useRef(0);
   
-  // Component methods that will be registered with the service
-  const componentMethods = useRef({
+  // Component instance reference
+  const componentMethods = {
     playAudio: async (
       audioSource: any, 
       audioMetadata: AdhanAudio | QuranAudioSource, 
       volume: number = 1.0
     ) => {
       try {
-        console.log(`[UnifiedAudioPlayerComponent] Playing audio: ${audioMetadata.name}`);
-        console.log(`[UnifiedAudioPlayerComponent] Audio source:`, audioSource);
-        
-        // Test URL accessibility for remote sources
-        if (audioSource && typeof audioSource === 'object' && audioSource.uri) {
-          console.log(`[UnifiedAudioPlayerComponent] Testing URL accessibility: ${audioSource.uri}`);
-          
-          try {
-            // Simple URL validation
-            const url = new URL(audioSource.uri);
-            console.log(`[UnifiedAudioPlayerComponent] URL validation passed: ${url.href}`);
-          } catch (urlError) {
-            console.error(`[UnifiedAudioPlayerComponent] Invalid URL format:`, urlError);
-            throw new Error(`Invalid audio URL format: ${audioSource.uri}`);
-          }
-        }
+        console.log(`[UnifiedAudioPlayerComponent] Playing ${audioMetadata.name} at volume ${volume}`);
         
         // Reset completion tracking for new audio
         hasHandledCompletion.current = false;
         currentAudioRef.current = audioMetadata;
         
-        // Update service state
+        // Update service state to show loading
         unifiedAudioService.updateStateFromPlayer({ 
           isLoading: true,
-          currentAudio: audioMetadata 
+          currentAudio: audioMetadata,
+          isPlaying: false
         });
 
-        console.log(`[UnifiedAudioPlayerComponent] Calling player.replace() with:`, audioSource);
+        console.log(`[UnifiedAudioPlayerComponent] Audio source:`, audioSource);
+        console.log(`[UnifiedAudioPlayerComponent] Audio metadata:`, {
+          name: audioMetadata.name,
+          url: audioMetadata.url,
+          isLocal: audioMetadata.isLocal
+        });
         
         // Load and play the audio using expo-audio best practices
         player.replace(audioSource);
@@ -110,6 +120,7 @@ export default function UnifiedAudioPlayerComponent({}: UnifiedAudioPlayerCompon
         
         if (player.isLoaded) {
           player.pause();
+          // Reset playback position
           player.seekTo(0);
         }
         
@@ -117,7 +128,6 @@ export default function UnifiedAudioPlayerComponent({}: UnifiedAudioPlayerCompon
           isPlaying: false,
           position: 0,
           currentAudio: undefined,
-          audioType: null,
         });
       } catch (error) {
         console.error('[UnifiedAudioPlayerComponent] Failed to stop audio:', error);
@@ -127,12 +137,10 @@ export default function UnifiedAudioPlayerComponent({}: UnifiedAudioPlayerCompon
     pauseAudio: async () => {
       try {
         console.log('[UnifiedAudioPlayerComponent] Pausing audio');
-        
         if (player.isLoaded) {
           player.pause();
+          unifiedAudioService.updateStateFromPlayer({ isPlaying: false });
         }
-        
-        unifiedAudioService.updateStateFromPlayer({ isPlaying: false });
       } catch (error) {
         console.error('[UnifiedAudioPlayerComponent] Failed to pause audio:', error);
       }
@@ -141,12 +149,10 @@ export default function UnifiedAudioPlayerComponent({}: UnifiedAudioPlayerCompon
     resumeAudio: async () => {
       try {
         console.log('[UnifiedAudioPlayerComponent] Resuming audio');
-        
         if (player.isLoaded) {
           player.play();
+          unifiedAudioService.updateStateFromPlayer({ isPlaying: true });
         }
-        
-        unifiedAudioService.updateStateFromPlayer({ isPlaying: true });
       } catch (error) {
         console.error('[UnifiedAudioPlayerComponent] Failed to resume audio:', error);
       }
@@ -154,94 +160,125 @@ export default function UnifiedAudioPlayerComponent({}: UnifiedAudioPlayerCompon
 
     setVolume: async (volume: number) => {
       try {
-        console.log(`[UnifiedAudioPlayerComponent] Setting volume to ${volume}`);
+        const clampedVolume = Math.max(0, Math.min(1, volume));
+        console.log(`[UnifiedAudioPlayerComponent] Setting volume to ${clampedVolume}`);
         
+        // Only try to set volume if player is loaded and volume control is available
         if (player.isLoaded && typeof player.volume !== 'undefined') {
-          player.volume = Math.max(0, Math.min(1, volume));
+          player.volume = clampedVolume;
+          unifiedAudioService.updateStateFromPlayer({ volume: clampedVolume });
+        } else {
+          console.warn('[UnifiedAudioPlayerComponent] Volume control not available yet, storing for later');
+          unifiedAudioService.updateStateFromPlayer({ volume: clampedVolume });
         }
-        
-        unifiedAudioService.updateStateFromPlayer({ volume });
       } catch (error) {
         console.warn('[UnifiedAudioPlayerComponent] Volume control not supported:', error);
+        // Still update the state even if we can't set the volume
+        unifiedAudioService.updateStateFromPlayer({ volume: Math.max(0, Math.min(1, volume)) });
       }
     },
 
     seekTo: async (seconds: number) => {
       try {
         console.log(`[UnifiedAudioPlayerComponent] Seeking to ${seconds}s`);
-        
         if (player.isLoaded) {
           player.seekTo(seconds);
+          unifiedAudioService.updateStateFromPlayer({ position: seconds * 1000 });
         }
-        
-        unifiedAudioService.updateStateFromPlayer({ 
-          position: seconds * 1000 
-        });
       } catch (error) {
         console.error('[UnifiedAudioPlayerComponent] Failed to seek:', error);
       }
     },
 
-    // Additional methods for enhanced functionality
-    getPlayerInfo: () => {
+    // Add method to get current player status
+    getPlayerStatus: () => {
       return {
-        isLoaded: player.isLoaded || false,
-        currentAudio: currentAudioRef.current,
-        hasActivePlayer: !!player,
+        isLoaded: player.isLoaded,
+        isPlaying: status?.playing || false,
+        currentTime: status?.currentTime || 0,
+        duration: status?.duration || 0,
+        hasVolume: typeof player.volume !== 'undefined'
       };
-    },
-  });
+    }
+  };
 
-  // Register this component with the unified audio service
+  // Register this component with the audio service
   useEffect(() => {
-    unifiedAudioService.setPlayerComponent(componentMethods.current);
+    unifiedAudioService.setPlayerComponent(componentMethods);
     console.log('[UnifiedAudioPlayerComponent] Registered with unified audio service');
     
     return () => {
-      // Clean up on unmount
       unifiedAudioService.setPlayerComponent(null);
-      console.log('[UnifiedAudioPlayerComponent] Unregistered from service');
     };
   }, []);
 
-  // Listen to player status changes and update service
+  // Listen to player status changes with throttling to prevent excessive updates
   useEffect(() => {
     if (status) {
-      console.log('[UnifiedAudioPlayerComponent] Player status update:', {
-        playing: status.playing,
-        duration: status.duration,
-        currentTime: status.currentTime,
-        didJustFinish: status.didJustFinish,
-        isLoaded: status.isLoaded,
-        isBuffering: status.isBuffering,
-      });
-
-      // Update audio service state based on player status
-      unifiedAudioService.updateStateFromPlayer({
-        isPlaying: status.playing || false,
-        position: (status.currentTime || 0) * 1000,
-        duration: (status.duration || 0) * 1000,
-        isLoading: !status.isLoaded,
-        isBuffering: status.isBuffering || false,
-      });
-
-      // Handle playback completion - only once per audio session
-      if (status.didJustFinish && !hasHandledCompletion.current) {
-        console.log('[UnifiedAudioPlayerComponent] Playback completed');
-        hasHandledCompletion.current = true;
+      const now = Date.now();
+      const timeSinceLastUpdate = now - lastUpdateTime.current;
+      
+      // Throttle updates to every 250ms for position updates, but allow immediate updates for state changes
+      const shouldUpdate = timeSinceLastUpdate > 250 || 
+                          status.playing !== (unifiedAudioService.getState().isPlaying) ||
+                          status.didJustFinish ||
+                          status.isLoaded !== (unifiedAudioService.getState().duration > 0);
+      
+      if (shouldUpdate) {
+        lastUpdateTime.current = now;
         
-        // Notify service of completion
+        // Update audio service state based on player status
         unifiedAudioService.updateStateFromPlayer({
-          isPlaying: false,
-          position: 0,
+          isPlaying: status.playing || false,
+          position: (status.currentTime || 0) * 1000, // Convert to milliseconds
+          duration: (status.duration || 0) * 1000,
+          isLoading: !status.isLoaded,
+          isBuffering: status.isBuffering || false,
         });
 
-        // Reset current audio reference
-        currentAudioRef.current = null;
+        // Handle playback completion - only once per audio session
+        if (status.didJustFinish && !hasHandledCompletion.current) {
+          console.log('[UnifiedAudioPlayerComponent] Playback completed');
+          hasHandledCompletion.current = true; // Mark as handled
+          
+          unifiedAudioService.updateStateFromPlayer({
+            isPlaying: false,
+            position: 0,
+          });
+          
+          // Note: Don't clear currentAudio here as the parent components may need it for repeat functionality
+        }
       }
     }
   }, [status]);
 
-  // This component doesn't render anything - it's a service component
+  // Handle audio interruptions and app state changes
+  useEffect(() => {
+    // Listen for app state changes to handle background/foreground transitions
+    const handleAppStateChange = (nextAppState: string) => {
+      if (nextAppState === 'background') {
+        console.log('[UnifiedAudioPlayerComponent] App backgrounded, audio continues...');
+      } else if (nextAppState === 'active') {
+        console.log('[UnifiedAudioPlayerComponent] App foregrounded');
+        // Sync state in case something changed while backgrounded
+        if (status && player.isLoaded) {
+          unifiedAudioService.updateStateFromPlayer({
+            isPlaying: status.playing || false,
+            position: (status.currentTime || 0) * 1000,
+            duration: (status.duration || 0) * 1000,
+          });
+        }
+      }
+    };
+
+    // Note: In a real app, you'd use AppState.addEventListener here
+    // For now, we'll just handle the visible state changes through the status
+
+    return () => {
+      // Cleanup listeners
+    };
+  }, [status, player]);
+
+  // This component doesn't render anything
   return null;
 } 

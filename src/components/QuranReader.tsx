@@ -23,7 +23,7 @@ import { hapticFeedback } from '../utils/haptics';
 import { secureLogger } from '../utils/secureLogger';
 import { quranApi, getSurahName } from '../utils/quranApi';
 import QuranAudioPlayer from './QuranAudioPlayer';
-import { playQuranVerse } from '../utils/unifiedAudioService';
+import { playQuranVerse, unifiedAudioService, setAudioStateListener, AudioState } from '../utils/unifiedAudioService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -51,6 +51,8 @@ interface VerseComponentProps {
   onWordPress?: (word: string, index: number) => void;
   isVisible: boolean;
   onVisibilityChange: (verse: QuranVerse, isVisible: boolean) => void;
+  audioState: AudioState;
+  isCurrentlyPlaying: boolean;
 }
 
 const VerseComponent: React.FC<VerseComponentProps> = ({
@@ -69,6 +71,8 @@ const VerseComponent: React.FC<VerseComponentProps> = ({
   onWordPress,
   isVisible,
   onVisibilityChange,
+  audioState,
+  isCurrentlyPlaying,
 }) => {
   const { colors } = useAppTheme();
   const { markAsRead } = useQuranContext();
@@ -98,7 +102,7 @@ const VerseComponent: React.FC<VerseComponentProps> = ({
       clearTimeout(visibilityTimerRef.current);
       visibilityTimerRef.current = null;
     }
-  }, [isVisible, hasBeenRead, surahNumber, verse.verseNumber]); // Removed markAsRead and visibilityTimer from deps
+  }, [isVisible, hasBeenRead, surahNumber, verse.verseNumber]);
 
   // Cleanup timer on unmount
   useEffect(() => {
@@ -108,6 +112,34 @@ const VerseComponent: React.FC<VerseComponentProps> = ({
       }
     };
   }, []);
+
+  // Show audio progress for currently playing verse
+  const renderAudioProgress = () => {
+    if (!isCurrentlyPlaying) return null;
+
+    const progress = audioState.duration > 0 ? audioState.position / audioState.duration : 0;
+    
+    return (
+      <View style={[styles.inlineAudioProgress, { backgroundColor: colors.primary + '10' }]}>
+        <View style={styles.audioProgressContainer}>
+          <View style={[styles.audioProgressTrack, { backgroundColor: colors.border }]}>
+            <View 
+              style={[
+                styles.audioProgressFill,
+                {
+                  width: `${progress * 100}%`,
+                  backgroundColor: colors.primary,
+                }
+              ]}
+            />
+          </View>
+          <Text style={[styles.audioProgressText, { color: colors.text.secondary }]}>
+            {Math.floor(audioState.position / 1000)}s / {Math.floor(audioState.duration / 1000)}s
+          </Text>
+        </View>
+      </View>
+    );
+  };
   
   const renderArabicText = () => {
     if (showWordByWord && onWordPress) {
@@ -151,18 +183,33 @@ const VerseComponent: React.FC<VerseComponentProps> = ({
     );
   };
 
+  const handleAudioPress = async () => {
+    try {
+      if (isCurrentlyPlaying) {
+        // If this verse is currently playing, pause it
+        await unifiedAudioService.pauseAudio();
+      } else {
+        // Start playing this verse
+        onPlayAudio(verse);
+      }
+    } catch (error) {
+      secureLogger.error('Error handling verse audio', error);
+    }
+  };
+
   return (
     <TouchableOpacity
       style={[
         styles.verseContainer,
         {
           backgroundColor: colors.surface,
-          borderColor: colors.border,
+          borderColor: isCurrentlyPlaying ? colors.primary : colors.border,
           marginBottom: readingMode === 'focus' ? 24 : 16,
           padding: readingMode === 'focus' ? 24 : 16,
           opacity: hasBeenRead ? 1 : 0.95,
           borderWidth: isVisible ? 2 : 1,
-          borderColor: isVisible ? colors.primary + '40' : colors.border,
+          borderColor: isCurrentlyPlaying ? colors.primary : 
+                      isVisible ? colors.primary + '40' : colors.border,
         }
       ]}
       onPress={() => onVersePress(verse)}
@@ -200,11 +247,26 @@ const VerseComponent: React.FC<VerseComponentProps> = ({
         
         <View style={styles.verseActions}>
           <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => onPlayAudio(verse)}
-            {...getButtonA11yProps('Play audio', `Play recitation for verse ${verse.verseNumber}`, false)}
+            style={[
+              styles.actionButton,
+              isCurrentlyPlaying && { backgroundColor: colors.primary + '20' }
+            ]}
+            onPress={handleAudioPress}
+            {...getButtonA11yProps(
+              isCurrentlyPlaying ? 'Pause audio' : 'Play audio', 
+              `${isCurrentlyPlaying ? 'Pause' : 'Play'} recitation for verse ${verse.verseNumber}`, 
+              isCurrentlyPlaying
+            )}
           >
-            <Ionicons name="play-circle" size={24} color={colors.secondary} />
+            {audioState.isLoading && isCurrentlyPlaying ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Ionicons 
+                name={isCurrentlyPlaying ? 'pause-circle' : 'play-circle'} 
+                size={24} 
+                color={isCurrentlyPlaying ? colors.primary : colors.secondary} 
+              />
+            )}
           </TouchableOpacity>
           
           <TouchableOpacity
@@ -224,6 +286,9 @@ const VerseComponent: React.FC<VerseComponentProps> = ({
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Inline audio progress */}
+      {renderAudioProgress()}
 
       <View style={styles.arabicContainer}>
         {renderArabicText()}
@@ -301,7 +366,31 @@ const QuranReader: React.FC<QuranReaderProps> = ({
   const [audioPlayerSurah, setAudioPlayerSurah] = useState<number>(1);
   const [audioPlayerVerse, setAudioPlayerVerse] = useState<number>(1);
   
+  // Audio state for inline playback
+  const [audioState, setAudioState] = useState<AudioState>(unifiedAudioService.getState());
+  const [currentPlayingVerse, setCurrentPlayingVerse] = useState<number | null>(null);
+  
   const flatListRef = useRef<FlatList>(null);
+
+  // Listen to audio state changes
+  useEffect(() => {
+    const unsubscribe = setAudioStateListener((state) => {
+      setAudioState(state);
+      
+      // Update currently playing verse based on audio state
+      if (state.audioType === 'quran' && state.currentAudio && 'verse' in state.currentAudio) {
+        if (state.isPlaying) {
+          setCurrentPlayingVerse(state.currentAudio.verse);
+        } else {
+          setCurrentPlayingVerse(null);
+        }
+      } else {
+        setCurrentPlayingVerse(null);
+      }
+    });
+    
+    return unsubscribe;
+  }, []);
 
   const getModeSettings = useCallback(() => {
     switch (mode) {
@@ -529,13 +618,25 @@ const QuranReader: React.FC<QuranReaderProps> = ({
       }
 
       hapticFeedback.light();
-      setShowAudioPlayer(true);
-      setAudioPlayerSurah(surah.id);
-      setAudioPlayerVerse(verse.verseNumber);
-      secureLogger.info('Audio playback initiated', { surah: surah.id, verse: verse.verseNumber });
+      secureLogger.info('Playing verse audio inline', { 
+        surah: surah.id, 
+        verse: verse.verseNumber 
+      });
+      
+      // Play the verse using unified audio service
+      await playQuranVerse(surah.id, verse.verseNumber);
+      
+      // Update currently playing verse
+      setCurrentPlayingVerse(verse.verseNumber);
+      
+      secureLogger.info('Verse audio playback started', { 
+        surah: surah.id, 
+        verse: verse.verseNumber 
+      });
     } catch (error) {
-      secureLogger.error('Error playing audio', error);
-      secureLogger.info('Audio playback failed, continuing without interruption');
+      secureLogger.error('Error playing verse audio', error);
+      // Show user-friendly error
+      Alert.alert('Audio Error', 'Unable to play audio. Please check your internet connection and try again.');
     }
   };
 
@@ -554,18 +655,20 @@ const QuranReader: React.FC<QuranReaderProps> = ({
 
   const isVerseBookmarked = (verse: QuranVerse) => {
     if (!verse || !surah) return false;
-    return bookmarks.some(
-      b => b.surahNumber === surah.id && b.verseNumber === verse.verseNumber
+    return bookmarks.some(bookmark => 
+      bookmark.surah === surah.id && bookmark.verse === verse.verseNumber
     );
   };
 
   const renderVerse = ({ item: verse, index }: { item: QuranVerse; index: number }) => {
-    const isVisible = visibleVerses.has(verse.verseNumber);
+    const isCurrentlyPlaying = currentPlayingVerse === verse.verseNumber && 
+                              audioState.audioType === 'quran' && 
+                              audioState.isPlaying;
     
     return (
       <VerseComponent
         verse={verse}
-        surahNumber={surah?.id || 0}
+        surahNumber={surah?.id || 1}
         isBookmarked={isVerseBookmarked(verse)}
         showTranslation={modeSettings.showTranslation}
         showTransliteration={modeSettings.showTransliteration}
@@ -577,10 +680,10 @@ const QuranReader: React.FC<QuranReaderProps> = ({
         onBookmarkToggle={handleBookmarkToggle}
         onPlayAudio={handlePlayAudio}
         onWordPress={modeSettings.showWordByWord ? handleWordPress : undefined}
-        isVisible={isVisible}
-        onVisibilityChange={(verse, isVisible) => {
-          // This callback can be used for additional visibility handling if needed
-        }}
+        isVisible={visibleVerses.has(verse.verseNumber)}
+        onVisibilityChange={() => {}}
+        audioState={audioState}
+        isCurrentlyPlaying={isCurrentlyPlaying}
       />
     );
   };
@@ -922,6 +1025,32 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.9)',
     borderRadius: 8,
     padding: 1,
+  },
+  inlineAudioProgress: {
+    height: 20,
+    borderRadius: 10,
+    marginBottom: 12,
+  },
+  audioProgressContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  audioProgressTrack: {
+    flex: 1,
+    height: '100%',
+    borderRadius: 10,
+    backgroundColor: '#E5E7EB',
+  },
+  audioProgressFill: {
+    height: '100%',
+    borderRadius: 10,
+    backgroundColor: '#007BFF',
+  },
+  audioProgressText: {
+    marginLeft: 12,
+    fontSize: 14,
+    fontWeight: '500',
   },
 });
 

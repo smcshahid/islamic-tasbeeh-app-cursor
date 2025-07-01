@@ -117,7 +117,7 @@ class UnifiedAudioService {
       // Primary URL sources (in order of preference)
       const audioUrls = [
         // EveryAyah - Mishary Rashid Alafasy (High Quality)
-        `https://www.everyayah.com/data/Mishary_Rashid_Alafasy_128kbps/${paddedSurah}${paddedVerse}.mp3`,
+        // `https://www.everyayah.com/data/Mishary_Rashid_Alafasy_128kbps/${paddedSurah}${paddedVerse}.mp3`,
         
         // EveryAyah - Abdul Basit (Alternative)
         `https://www.everyayah.com/data/Abdul_Basit_Murattal_192kbps/${paddedSurah}${paddedVerse}.mp3`,

@@ -101,6 +101,7 @@ const QuranDashboard: React.FC = () => {
   const [showSurahList, setShowSurahList] = useState(false);
   const [showReader, setShowReader] = useState(false);
   const [showAudioPlayer, setShowAudioPlayer] = useState(false);
+  const [showPlaylistPlayer, setShowPlaylistPlayer] = useState(false);
   const [showMemorizationTools, setShowMemorizationTools] = useState(false);
   const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
   const [readerMode, setReaderMode] = useState<'reciter' | 'seeker' | 'memorizer' | 'auditory' | 'beginner' | 'normal'>('normal');
@@ -156,6 +157,22 @@ const QuranDashboard: React.FC = () => {
         setShowAudioPlayer(true);
       },
       color: colors.islamic.navy,
+    },
+    {
+      icon: 'musical-notes',
+      title: 'Surah Playlist',
+      subtitle: 'Continuous surah playback',
+      onPress: () => {
+        if (lastReadPosition) {
+          setSelectedSurah(lastReadPosition.surah);
+          setSelectedVerse(lastReadPosition.verse);
+        } else {
+          setSelectedSurah(1);
+          setSelectedVerse(1);
+        }
+        setShowPlaylistPlayer(true);
+      },
+      color: colors.islamic.green,
     },
   ];
 
@@ -440,6 +457,16 @@ const QuranDashboard: React.FC = () => {
         surahNumber={selectedSurah}
         verseNumber={selectedVerse}
         autoPlay={true}
+      />
+
+      {/* Quran Playlist Player */}
+      <QuranAudioPlayer
+        visible={showPlaylistPlayer}
+        onClose={() => setShowPlaylistPlayer(false)}
+        surahNumber={selectedSurah}
+        verseNumber={selectedVerse}
+        autoPlay={true}
+        playlistMode={true}
       />
 
       {/* Quran Memorization Tools */}
