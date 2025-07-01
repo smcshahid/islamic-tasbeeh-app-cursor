@@ -538,6 +538,23 @@ const QuranReader: React.FC<QuranReaderProps> = ({
 
   const modeSettings = getModeSettings();
 
+  const calculateEstimatedItemSize = useCallback(() => {
+    // Calculate a more accurate estimated item size based on current settings
+    const baseHeight = 120; // Base verse container height
+    const avgArabicLength = 150; // Average Arabic text length
+    const avgTranslationLength = 200; // Average translation length
+    
+    const arabicHeight = Math.ceil(avgArabicLength / 25) * (modeSettings.arabicFontSize * 1.8);
+    const translationHeight = modeSettings.showTranslation 
+      ? Math.ceil(avgTranslationLength / 50) * (settings.translationFontSize * 1.6)
+      : 0;
+    const transliterationHeight = modeSettings.showTransliteration 
+      ? settings.translationFontSize * 1.5
+      : 0;
+    
+    return baseHeight + arabicHeight + translationHeight + transliterationHeight;
+  }, [modeSettings, settings]);
+
   useEffect(() => {
     if (visible) {
       if (mode === 'juz' && juzData) {
@@ -699,20 +716,22 @@ const QuranReader: React.FC<QuranReaderProps> = ({
     }
   };
 
-  // Simple and reliable scrolling after surah loads
+  // Enhanced scrolling with multiple retry strategies
   useEffect(() => {
     if (!isLoading && surah && flashListRef.current) {
       const targetVerse = highlightBookmark?.verse || initialVerse;
       if (targetVerse > 1) {
-        // Use a more reliable timeout approach
+        // Progressive delay strategy for better accuracy
         setTimeout(() => {
-          scrollToVerse(targetVerse);
-        }, 800); // Increased delay for FlashList to fully render
+          scrollToVerseWithRetry(targetVerse);
+        }, 1000); // Initial delay for FlashList to fully render
       }
     }
   }, [isLoading, surah, highlightBookmark, initialVerse]);
 
-  const scrollToVerse = (verseNumber: number) => {
+  const scrollToVerseWithRetry = async (verseNumber: number, attempt = 1) => {
+    const maxAttempts = 3;
+    
     try {
       if (!flashListRef.current || !surah) {
         secureLogger.warn('FlashList ref or surah not available');
@@ -720,22 +739,102 @@ const QuranReader: React.FC<QuranReaderProps> = ({
       }
 
       const verseIndex = surah.verses.findIndex(v => v.verseNumber === verseNumber);
-      if (verseIndex >= 0) {
-        secureLogger.info('Scrolling to verse', { verseNumber, verseIndex });
-        
-        // FlashList has better scrollToIndex support
+      if (verseIndex < 0) {
+        secureLogger.warn('Verse not found', { verseNumber, totalVerses: surah.verses.length });
+        return;
+      }
+
+      secureLogger.info('Scrolling to verse', { verseNumber, verseIndex, attempt });
+
+      // Strategy 1: For verses in the first half, use scrollToIndex
+      if (verseIndex < surah.verses.length / 2) {
         flashListRef.current.scrollToIndex({
           index: verseIndex,
-          animated: true,
+          animated: attempt === 1,
+          viewPosition: 0.1, // Position verse near top
         });
-        
-        secureLogger.info('Successfully scrolled to verse', { verseNumber, verseIndex });
       } else {
-        secureLogger.warn('Verse not found', { verseNumber, totalVerses: surah.verses.length });
+        // Strategy 2: For verses in the second half, use more accurate approach
+        // First scroll to end to ensure all items are measured
+        flashListRef.current.scrollToEnd({ animated: false });
+        
+        // Wait a bit for measurement
+        setTimeout(() => {
+          if (flashListRef.current) {
+            flashListRef.current.scrollToIndex({
+              index: verseIndex,
+              animated: true,
+              viewPosition: 0.1,
+            });
+          }
+        }, 300);
       }
+
+      secureLogger.info('Successfully initiated scroll to verse', { verseNumber, verseIndex, attempt });
+
+      // Verify scroll position after a delay
+      setTimeout(() => {
+        verifyScrollPosition(verseNumber, verseIndex, attempt, maxAttempts);
+      }, 1500);
+
     } catch (error) {
-      secureLogger.error('Error scrolling to verse', { error: error instanceof Error ? error.message : String(error), verseNumber });
+      secureLogger.error('Error scrolling to verse', { 
+        error: error instanceof Error ? error.message : String(error), 
+        verseNumber, 
+        attempt 
+      });
+      
+      if (attempt < maxAttempts) {
+        setTimeout(() => {
+          scrollToVerseWithRetry(verseNumber, attempt + 1);
+        }, 1000);
+      }
     }
+  };
+
+  const verifyScrollPosition = (verseNumber: number, expectedIndex: number, attempt: number, maxAttempts: number) => {
+    // This is a simplified verification - in a real implementation, 
+    // you might want to check the actual visible items
+    secureLogger.info('Scroll verification', { verseNumber, expectedIndex, attempt });
+    
+    // If we're not at the last attempt and this was a high index, try offset-based scrolling
+    if (attempt < maxAttempts && expectedIndex > surah!.verses.length * 0.7) {
+      secureLogger.info('Attempting fallback offset-based scrolling', { verseNumber, expectedIndex, attempt });
+      setTimeout(() => {
+        scrollToVerseByOffset(verseNumber, expectedIndex);
+      }, 500);
+    }
+  };
+
+  const scrollToVerseByOffset = (verseNumber: number, verseIndex: number) => {
+    try {
+      if (!flashListRef.current || !surah) return;
+      
+      // Calculate approximate offset based on average item sizes
+      const averageItemHeight = calculateEstimatedItemSize();
+      const estimatedOffset = verseIndex * averageItemHeight;
+      
+      secureLogger.info('Using offset-based scrolling', { 
+        verseNumber, 
+        verseIndex, 
+        estimatedOffset, 
+        averageItemHeight 
+      });
+      
+      flashListRef.current.scrollToOffset({
+        offset: estimatedOffset,
+        animated: true,
+      });
+      
+      secureLogger.info('Offset-based scroll initiated', { verseNumber, estimatedOffset });
+      
+    } catch (error) {
+      secureLogger.error('Error in offset-based scrolling', error);
+    }
+  };
+
+  const scrollToVerse = (verseNumber: number) => {
+    scrollToVerseWithRetry(verseNumber);
   };
 
   // Handle viewport changes to track which verses are visible
@@ -1000,9 +1099,30 @@ const QuranReader: React.FC<QuranReaderProps> = ({
           data={surah.verses}
           renderItem={renderVerse}
           keyExtractor={(item) => item.id.toString()}
-          estimatedItemSize={180} // FlashList uses estimatedItemSize instead of getItemLayout
+          estimatedItemSize={calculateEstimatedItemSize()} // Dynamic estimation based on content
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.flashListContent}
+          getItemType={(item) => {
+            // Help FlashList optimize by categorizing verse types
+            const verse = item as QuranVerse;
+            if (verse.text.length > 200) return 'long';
+            if (verse.text.length > 100) return 'medium';
+            return 'short';
+          }}
+          overrideItemLayout={(layout, item) => {
+            // Provide better size estimates for different verse types
+            const verse = item as QuranVerse;
+            const baseHeight = 120; // Base verse container height
+            const arabicTextHeight = Math.ceil(verse.text.length / 25) * (modeSettings.arabicFontSize * 1.8);
+            const translationHeight = modeSettings.showTranslation 
+              ? Math.ceil((verse.translation?.length || 0) / 50) * (settings.translationFontSize * 1.6)
+              : 0;
+            const transliterationHeight = modeSettings.showTransliteration 
+              ? Math.ceil((verse.transliteration?.length || 0) / 60) * settings.translationFontSize
+              : 0;
+            
+            layout.size = baseHeight + arabicTextHeight + translationHeight + transliterationHeight;
+          }}
         />
       </View>
     );
@@ -1087,9 +1207,35 @@ const QuranReader: React.FC<QuranReaderProps> = ({
         data={allContent}
         renderItem={renderMultiItem}
         keyExtractor={(item, index) => `${item.type}-${item.surahId}-${index}`}
-        estimatedItemSize={180}
+        estimatedItemSize={calculateEstimatedItemSize()}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.flashListContent}
+        getItemType={(item) => {
+          if (item.type === 'surah-header') return 'header';
+          const verse = item.data as QuranVerse;
+          if (verse.text.length > 200) return 'long';
+          if (verse.text.length > 100) return 'medium';
+          return 'short';
+        }}
+        overrideItemLayout={(layout, item) => {
+          if (item.type === 'surah-header') {
+            layout.size = 120; // Fixed height for surah headers
+            return;
+          }
+          
+          // Same calculation as single surah mode
+          const verse = item.data as QuranVerse;
+          const baseHeight = 120;
+          const arabicTextHeight = Math.ceil(verse.text.length / 25) * (modeSettings.arabicFontSize * 1.8);
+          const translationHeight = modeSettings.showTranslation 
+            ? Math.ceil((verse.translation?.length || 0) / 50) * (settings.translationFontSize * 1.6)
+            : 0;
+          const transliterationHeight = modeSettings.showTransliteration 
+            ? Math.ceil((verse.transliteration?.length || 0) / 60) * settings.translationFontSize
+            : 0;
+          
+          layout.size = baseHeight + arabicTextHeight + translationHeight + transliterationHeight;
+        }}
       />
     );
   };
@@ -1242,6 +1388,7 @@ const styles = StyleSheet.create({
   verseContainer: {
     borderRadius: 12,
     borderWidth: 1,
+    minHeight: 120, // Ensure minimum height consistency
   },
   verseHeader: {
     flexDirection: 'row',
